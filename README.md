@@ -1,27 +1,35 @@
 # Asset Arsenal
 
-A chat-guided, OpenAI-powered **icon extraction workbench** (PRD V0.1).
-
-Upload an image full of icons → AI detects the icons and a shared icon-family
-style → AI writes one generation prompt per icon → AI regenerates each icon as a
-clean, transparent, standalone asset → review, regenerate, and download.
+An OpenAI-powered **icon extraction workbench**. Upload a source image → a
+6-step AI pipeline detects the icons, builds a style-anchoring contact sheet,
+then regenerates each icon as a clean, transparent standalone asset.
 
 ```
-Upload image
-  → [gpt-5.4-mini]    detect icons + family style   →  Manifest
-  → [gpt-5.4-nano]    write one prompt per icon      →  Prompt Pack
-  → [gpt-image-1-mini] generate one icon per prompt  →  Generated Icons
-  → review / regenerate / download
+sourceImage
+  → /api/icons/analyze                     [gpt-5.4-mini, vision]
+iconManifest
+  → /api/icons/compose-collection-prompt   [gpt-5.4-nano, text]
+collectionPrompt
+  → /api/icons/generate-collection-image   [gpt-image-1-mini, images.edit, source as reference]
+collectionImage  ← "contact sheet" (the visual style anchor)
+  → /api/icons/compose-individual-prompts  [gpt-5.4-mini, vision, contact sheet as input]
+individualPrompts { sharedStylePrompt, iconPrompts[] }
+  → /api/icons/generate-one | generate-batch  [gpt-image-1-mini, images.edit, contact sheet as reference]
+generatedIcons[]
 ```
 
-It's a *workbench*, not a black box: two approval gates (manifest, prompts),
-"Show JSON" everywhere, and a collapsible debug drawer.
+The contact sheet is the visual style anchor for the whole run — steps 4 and 5
+pass it back to the model as a reference image via `images.edit` (not
+`images.generate`, which has no reference-image input).
+
+It's a *workbench*, not a black box: each pipeline step is an independent,
+rerunnable breakpoint with "Show JSON" visibility at every stage.
 
 ## Setup
 
 ```bash
 npm install
-# Add a real key — generation will not work until you do:
+# Add a real key — OpenAI calls will not work until you do:
 echo 'OPENAI_API_KEY=sk-...' > .env.local
 npm run dev
 ```
@@ -29,6 +37,14 @@ npm run dev
 The key is **server-side only** — it's never exposed to the browser. The UI and
 routes build and render fine without a key; only the OpenAI calls fail (with a
 clear "API key is not configured." message).
+
+## Routes
+
+| Route | What |
+|---|---|
+| `/bench` | Primary surface — 6 sections, one per pipeline step. Each shows the resolved prompt before running and feeds its output into the next step. |
+| `/` | Linear run-through of the full flow. |
+| `/gallery` | IndexedDB-backed library of source images and generated icons. |
 
 ## Stack
 
@@ -38,13 +54,12 @@ Next.js 16 (App Router) · TypeScript · Tailwind v4 · `openai@6` · `zod@4`.
 
 | Path | What |
 |---|---|
-| `docs/API-CONTRACT.md` | Verified OpenAI/Next call shapes — the spec the code follows |
-| `types/icon-pipeline.ts` | Domain + API types (PRD §13) |
-| `lib/icon/` | `models` (roles + guardrails), `schemas` (Zod), `prompts` (§15 templates), `errors`, `use-icon-pipeline` (state machine), `client-api`, `download`, `fixtures` |
-| `lib/openai/` | `analyze-icons`, `generate-icon-prompts`, `generate-icon` services |
-| `app/api/` | `icon-analysis`, `icon-prompts`, `generate-icon`, `generate-icons-batch` |
-| `components/icon-pipeline/` | `UploadCard`, `ManifestReviewCard`, `PromptReviewCard`, `IconGrid`, `DebugDrawer`, `Header` |
-| `app/preview` | Dev-only route rendering every card against fixtures |
+| `docs/API-CONTRACT.md` | Authoritative spec for the 6-step chain, model roles, and call shapes |
+| `types/icon-pipeline.ts` | Domain + API types |
+| `lib/icon/models.ts` | Model role IDs + cost guardrails (change model IDs here only) |
+| `lib/icon/prompts.ts` | All per-step prompts — edit here to tune the pipeline |
+| `lib/icon/schemas/` | Zod schemas for structured outputs and request validation |
+| `app/api/icons/` | `analyze`, `compose-collection-prompt`, `generate-collection-image`, `compose-individual-prompts`, `generate-one`, `generate-batch` |
 
 ## Model roles
 
@@ -52,9 +67,11 @@ Defined in `lib/icon/models.ts`. If a model ID is rejected by the live API,
 change it **there** (one place):
 
 ```ts
-visionAnalyzerModel: "gpt-5.4-mini"    // image  -> manifest JSON
-promptWriterModel:   "gpt-5.4-nano"    // manifest -> prompt pack JSON
-imageGeneratorModel: "gpt-image-1-mini" // prompt -> icon image
+visionAnalyzerModel:   "gpt-5.4-mini"     // step 1: source image       -> manifest JSON
+collectionPromptModel: "gpt-5.4-nano"     // step 2: manifest           -> collection prompt text
+collectionImageModel:  "gpt-image-1-mini" // step 3: source + prompt    -> contact sheet
+individualPromptModel: "gpt-5.4-mini"     // step 4: contact sheet      -> individual prompts JSON
+imageGeneratorModel:   "gpt-image-1-mini" // step 5: contact sheet + prompt -> single icon
 ```
 
 ## Guardrails
