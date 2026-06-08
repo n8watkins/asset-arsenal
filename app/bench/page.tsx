@@ -44,6 +44,7 @@ import {
   realizedTextCostUSD,
 } from "@/lib/icon/model-reference";
 import { loadStacks } from "@/lib/icon/stacks";
+import { persistBenchIcons } from "@/lib/icon/bench-persist";
 import type { TokenUsage } from "@/types/icon-pipeline";
 
 function fmtUsd(n: number): string {
@@ -811,7 +812,13 @@ function Section4({
 // §5 — Generate one icon
 // ---------------------------------------------------------------------------
 
-function Section5({ state }: { state: BenchState }) {
+function Section5({
+  state,
+  onPersist,
+}: {
+  state: BenchState;
+  onPersist: (icons: GeneratedIcon[]) => Promise<number>;
+}) {
   const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
   const [selectedId, setSelectedId] = useState(prompts.iconPrompts[0]?.iconId);
   const [sharedStyle, setSharedStyle] = useState(prompts.sharedStylePrompt);
@@ -822,6 +829,7 @@ function Section5({ state }: { state: BenchState }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeneratedIcon | null>(null);
   const [realized, setRealized] = useState<string | null>(null);
+  const [saved, setSaved] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const onSelect = (id: string) => {
@@ -830,6 +838,7 @@ function Section5({ state }: { state: BenchState }) {
     setPromptText(match?.prompt ?? "");
     setResult(null);
     setRealized(null);
+    setSaved(null);
     setError(null);
   };
 
@@ -846,6 +855,7 @@ function Section5({ state }: { state: BenchState }) {
     setError(null);
     setResult(null);
     setRealized(null);
+    setSaved(null);
     try {
       const { generatedIcon } = await generateOneIcon({
         collectionImageBase64: state.collectionImageDataUrl,
@@ -859,6 +869,7 @@ function Section5({ state }: { state: BenchState }) {
         setRealized(
           fmtUsd(imageCostUSD(state.stack.models.generateIcons, state.stack.quality.generateIcons, 1)),
         );
+        setSaved(await onPersist([generatedIcon]));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -926,6 +937,7 @@ function Section5({ state }: { state: BenchState }) {
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
+      <SavedNote saved={saved} />
       <OutputTabs
         empty={!error && !result}
         rawData={result ?? (error ? { error } : null)}
@@ -941,15 +953,36 @@ function Section5({ state }: { state: BenchState }) {
   );
 }
 
+// "✓ saved to gallery" confirmation shown after a successful generation persists.
+function SavedNote({ saved }: { saved: number | null }) {
+  if (!saved) return null;
+  return (
+    <p className="text-emerald-300/90 text-sm font-medium flex items-center gap-1.5">
+      <span>✓</span>
+      Saved {saved} icon{saved === 1 ? "" : "s"} to the{" "}
+      <Link href="/gallery" className="underline hover:text-emerald-200">
+        gallery
+      </Link>
+    </p>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // §6 — Generate batch
 // ---------------------------------------------------------------------------
 
-function Section6({ state }: { state: BenchState }) {
+function Section6({
+  state,
+  onPersist,
+}: {
+  state: BenchState;
+  onPersist: (icons: GeneratedIcon[]) => Promise<number>;
+}) {
   const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeneratedIcon[] | null>(null);
   const [realized, setRealized] = useState<string | null>(null);
+  const [saved, setSaved] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
@@ -958,6 +991,7 @@ function Section6({ state }: { state: BenchState }) {
     setError(null);
     setResult(null);
     setRealized(null);
+    setSaved(null);
     try {
       const { generatedIcons } = await generateIconsBatch({
         collectionImageBase64: state.collectionImageDataUrl,
@@ -970,6 +1004,7 @@ function Section6({ state }: { state: BenchState }) {
       setRealized(
         fmtUsd(imageCostUSD(state.stack.models.generateIcons, state.stack.quality.generateIcons, ok)),
       );
+      setSaved(await onPersist(generatedIcons));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -998,6 +1033,7 @@ function Section6({ state }: { state: BenchState }) {
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
+      <SavedNote saved={saved} />
       <OutputTabs
         empty={!error && !result}
         rawData={result ?? (error ? { error } : null)}
@@ -1031,6 +1067,25 @@ export default function BenchPage() {
   const patch = useCallback(
     (p: Partial<BenchState>) => setState((s) => ({ ...s, ...p })),
     [],
+  );
+
+  // Each bench page-load is one persistence "run": icons generated in §5/§6 are
+  // saved to the gallery under this run id so outputs survive a refresh.
+  const runIdRef = useRef<string | null>(null);
+  runIdRef.current ??= crypto.randomUUID();
+  const createdAtRef = useRef<string>(new Date().toISOString());
+
+  const persistIcons = useCallback(
+    (icons: GeneratedIcon[]) =>
+      persistBenchIcons(icons, {
+        runId: runIdRef.current!,
+        createdAt: createdAtRef.current,
+        sourceId: runIdRef.current!,
+        manifest: state.manifest,
+        collectionPrompt: state.collectionPrompt,
+        individualPrompts: state.individualPrompts,
+      }),
+    [state.manifest, state.collectionPrompt, state.individualPrompts],
   );
 
   // Saved stacks come from localStorage; load once on mount (client-only).
@@ -1083,8 +1138,8 @@ export default function BenchPage() {
           <Section2 state={state} patch={patch} />
           <Section3 state={state} patch={patch} />
           <Section4 state={state} patch={patch} />
-          <Section5 state={state} />
-          <Section6 state={state} />
+          <Section5 state={state} onPersist={persistIcons} />
+          <Section6 state={state} onPersist={persistIcons} />
         </div>
       </main>
     </>
