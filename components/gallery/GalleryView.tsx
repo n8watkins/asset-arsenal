@@ -23,6 +23,8 @@ export interface GalleryViewProps {
   /** Smaller tiles + scroll cap, for embedding (e.g. main page). */
   compact?: boolean;
   title?: string;
+  /** When true, hides upload + delete — the gallery is only mutable at /gallery. */
+  readOnly?: boolean;
   onUseImage?: (img: {
     id: string;
     dataUrl: string;
@@ -74,11 +76,13 @@ function OriginBadge({ kind }: { kind: "source" | "icon" }) {
 function GalleryTile({
   image,
   compact,
+  readOnly,
   onUseImage,
   onRemove,
 }: {
   image: GalleryImage;
   compact: boolean;
+  readOnly: boolean;
   onUseImage?: GalleryViewProps["onUseImage"];
   onRemove: (img: GalleryImage) => Promise<void>;
 }) {
@@ -191,14 +195,16 @@ function GalleryTile({
           >
             {busy === "download" ? "…" : "↓"}
           </button>
-          <button
-            onClick={handleRemove}
-            disabled={busy !== null}
-            aria-label="Delete image"
-            className="text-zinc-400 hover:text-red-400 disabled:opacity-40 border border-zinc-700 hover:border-red-400/40 p-1 rounded-lg transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
-          >
-            <TrashIcon />
-          </button>
+          {!readOnly && (
+            <button
+              onClick={handleRemove}
+              disabled={busy !== null}
+              aria-label="Delete image"
+              className="text-zinc-400 hover:text-red-400 disabled:opacity-40 border border-zinc-700 hover:border-red-400/40 p-1 rounded-lg transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            >
+              <TrashIcon />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -214,6 +220,7 @@ function GalleryGroup({
   kind,
   images,
   compact,
+  readOnly,
   emptyMessage,
   onUseImage,
   onRemove,
@@ -222,6 +229,7 @@ function GalleryGroup({
   kind: "source" | "icon";
   images: GalleryImage[];
   compact: boolean;
+  readOnly: boolean;
   emptyMessage: string;
   onUseImage?: GalleryViewProps["onUseImage"];
   onRemove: (img: GalleryImage) => Promise<void>;
@@ -253,6 +261,7 @@ function GalleryGroup({
               key={`${image.kind}-${image.id}`}
               image={image}
               compact={compact}
+              readOnly={readOnly}
               onUseImage={onUseImage}
               onRemove={onRemove}
             />
@@ -270,6 +279,7 @@ function GalleryGroup({
 export default function GalleryView({
   compact = false,
   title,
+  readOnly = false,
   onUseImage,
 }: GalleryViewProps) {
   const { sources, icons, loading, removeSource, removeIcon, addImages } =
@@ -282,7 +292,7 @@ export default function GalleryView({
   } | null>(null);
   const [uploading, setUploading] = useState(false);
   // In compact mode the dropzone is collapsed behind a button to save space.
-  const [showUpload, setShowUpload] = useState(!compact);
+  const [showUpload, setShowUpload] = useState(!compact && !readOnly);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const sourceImages = useMemo<GalleryImage[]>(
@@ -347,7 +357,7 @@ export default function GalleryView({
         {title && (
           <h3 className="text-zinc-100 font-semibold text-sm">{title}</h3>
         )}
-        {compact && !showUpload && (
+        {compact && !showUpload && !readOnly && (
           <button
             onClick={() => setShowUpload(true)}
             className="text-xs text-cyan-400 hover:text-cyan-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
@@ -358,7 +368,7 @@ export default function GalleryView({
       </div>
 
       {/* Upload control */}
-      {showUpload && (
+      {showUpload && !readOnly && (
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -428,7 +438,8 @@ export default function GalleryView({
             kind="source"
             images={sourceImages}
             compact={compact}
-            emptyMessage="No uploaded images yet. Upload some above."
+            readOnly={readOnly}
+            emptyMessage="No uploaded images yet."
             onUseImage={onUseImage}
             onRemove={handleRemove}
           />
@@ -437,6 +448,7 @@ export default function GalleryView({
             kind="icon"
             images={iconImages}
             compact={compact}
+            readOnly={readOnly}
             emptyMessage="No generated icons yet. Run the pipeline to create some."
             onUseImage={onUseImage}
             onRemove={handleRemove}

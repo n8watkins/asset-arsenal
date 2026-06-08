@@ -7,8 +7,7 @@ import ManifestReviewCard from "@/components/icon-pipeline/ManifestReviewCard";
 import PromptReviewCard from "@/components/icon-pipeline/PromptReviewCard";
 import IconGrid from "@/components/icon-pipeline/IconGrid";
 import DebugDrawer from "@/components/icon-pipeline/DebugDrawer";
-import GalleryPanel from "@/components/gallery/GalleryPanel";
-import GalleryView from "@/components/gallery/GalleryView";
+import GalleryPicker from "@/components/gallery/GalleryPicker";
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import { useIconPipeline } from "@/lib/icon/use-icon-pipeline";
 import { analyzeImage, fetchPrompts, generateOneIcon } from "@/lib/icon/client-api";
@@ -53,7 +52,6 @@ export default function Home() {
   const p = useIconPipeline();
   const { run, currentStep } = p;
   const [isUploading, setIsUploading] = useState(false);
-  const [galleryOpen, setGalleryOpen] = useState(false);
 
   // ---- Stage 1/2: upload + analysis ----
   const handleFileSelected = useCallback(
@@ -276,35 +274,6 @@ export default function Home() {
 
       <main className="flex flex-1 justify-center px-4 py-8">
         <div className="flex w-full max-w-3xl flex-col gap-6">
-          {/* Compact, collapsible gallery */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900">
-            <button
-              onClick={() => setGalleryOpen((v) => !v)}
-              className="flex w-full items-center justify-between px-5 py-3 text-left focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-2xl"
-              aria-expanded={galleryOpen}
-            >
-              <span className="text-sm font-medium text-zinc-200">Gallery</span>
-              <svg
-                className={`h-4 w-4 text-zinc-400 transition-transform ${galleryOpen ? "rotate-180" : ""}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.5 8.25l-7.5 7.5-7.5-7.5"
-                />
-              </svg>
-            </button>
-            {galleryOpen && (
-              <div className="border-t border-zinc-800 px-5 py-4">
-                <GalleryView compact onUseImage={handleUseDataUrl} />
-              </div>
-            )}
-          </div>
-
           <UploadCard
             sourceImage={run.sourceImage ?? null}
             isUploading={isUploading}
@@ -313,6 +282,15 @@ export default function Home() {
             onSourceDrop={handleUseSource}
             disabled={currentStep === "analyzing_icons"}
           />
+
+          <div className="-mt-2 flex items-center gap-3 text-xs text-zinc-500">
+            <span>or reuse an image you&apos;ve already saved:</span>
+            <GalleryPicker
+              onPick={handleUseDataUrl}
+              label="Choose from gallery"
+              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
+          </div>
 
           {hasSource && !showManifest && (
             <PromptDisclosure
@@ -381,7 +359,6 @@ export default function Home() {
         </div>
       </main>
 
-      <GalleryPanel onUseSource={handleUseSource} />
       <DebugDrawer run={run} />
     </div>
   );

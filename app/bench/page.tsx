@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
   buildPromptPackPrompt,
@@ -12,7 +12,7 @@ import { readImageFile } from "@/lib/icon/download";
 import { SAMPLE_MANIFEST, SAMPLE_PROMPT_PACK } from "@/lib/icon/fixtures";
 import type { IconManifest, IconPrompt, GeneratedIcon } from "@/types/icon-pipeline";
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
-import GalleryView from "@/components/gallery/GalleryView";
+import GalleryPicker from "@/components/gallery/GalleryPicker";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -88,12 +88,7 @@ function RunButton({
 // Section 1 — Icon Analysis
 // ---------------------------------------------------------------------------
 
-function Section1({
-  externalImage,
-}: {
-  /** An image chosen from the gallery, fed in from BenchPage. */
-  externalImage?: { dataUrl: string; fileName?: string } | null;
-}) {
+function Section1() {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -114,16 +109,18 @@ function Section1({
     setPreview(url);
   }, []);
 
-  // When the gallery feeds an image in, adopt it as the analysis image.
-  useEffect(() => {
-    if (!externalImage) return;
-    setFile(null);
-    setFileName(externalImage.fileName ?? "gallery-image");
-    setDataUrl(externalImage.dataUrl);
-    setPreview(externalImage.dataUrl);
-    setResult(null);
-    setError(null);
-  }, [externalImage]);
+  // Adopt an image selected from the gallery (read-only reference) as the input.
+  const useGalleryImage = useCallback(
+    (img: { dataUrl: string; fileName: string }) => {
+      setFile(null);
+      setFileName(img.fileName);
+      setDataUrl(img.dataUrl);
+      setPreview(img.dataUrl);
+      setResult(null);
+      setError(null);
+    },
+    [],
+  );
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -161,6 +158,17 @@ function Section1({
       <p className="text-zinc-500 text-xs italic">
         + the uploaded image is sent as image input alongside this prompt
       </p>
+
+      {/* Input source: upload from computer OR reference the gallery */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-zinc-500">Input image:</span>
+        <GalleryPicker
+          onPick={(img) => useGalleryImage({ dataUrl: img.dataUrl, fileName: img.fileName })}
+          label="Choose from gallery"
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        />
+        <span className="text-xs text-zinc-600">or drop / browse below</span>
+      </div>
 
       {/* Dropzone */}
       <div
@@ -477,14 +485,6 @@ function Section4() {
 // ---------------------------------------------------------------------------
 
 export default function BenchPage() {
-  // Image chosen from the gallery, fed into Section 1's analysis step.
-  // A fresh object each click guarantees the effect in Section1 re-runs even
-  // if the same image is picked twice.
-  const [analysisImage, setAnalysisImage] = useState<{
-    dataUrl: string;
-    fileName?: string;
-  } | null>(null);
-
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-10">
       <div className="max-w-4xl mx-auto flex flex-col gap-8">
@@ -505,24 +505,7 @@ export default function BenchPage() {
           </p>
         </div>
 
-        {/* Bench-centric image gallery */}
-        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
-          <GalleryView
-            title="Image Gallery"
-            onUseImage={(img) =>
-              setAnalysisImage({
-                dataUrl: img.dataUrl,
-                fileName: img.fileName,
-              })
-            }
-          />
-          <p className="text-zinc-500 text-xs">
-            Click <span className="text-violet-400">Use</span> on any image to
-            send it to Section 1 below for analysis.
-          </p>
-        </section>
-
-        <Section1 externalImage={analysisImage} />
+        <Section1 />
         <Section2 />
         <Section3 />
         <Section4 />
