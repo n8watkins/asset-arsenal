@@ -21,6 +21,11 @@ export type UsageEntry = {
 
 export const USAGE_LOG_KEY = "asset-arsenal:usage-log";
 
+// Cap the local log so it can't grow unbounded and blow the localStorage quota.
+// Newest-first, so we keep the most recent calls. Lifts entirely once usage
+// moves to a real database.
+export const USAGE_LOG_CAP = 500;
+
 /** Every call ever logged, newest-first. */
 export function loadUsage(): UsageEntry[] {
   if (typeof localStorage === "undefined") return [];
@@ -43,7 +48,7 @@ export function logUsage(
       id: crypto.randomUUID(),
       at: entry.at ?? new Date().toISOString(),
     };
-    const next = [full, ...loadUsage()];
+    const next = [full, ...loadUsage()].slice(0, USAGE_LOG_CAP);
     localStorage.setItem(USAGE_LOG_KEY, JSON.stringify(next));
   } catch {
     /* quota / private mode — ignore */

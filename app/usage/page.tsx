@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import { STEPS, type StepKey } from "@/lib/icon/model-reference";
-import { loadUsage, clearUsage, type UsageEntry } from "@/lib/icon/usage-log";
+import { loadUsage, clearUsage, USAGE_LOG_CAP, type UsageEntry } from "@/lib/icon/usage-log";
 
 function usd(n: number): string {
   if (n >= 1) return `$${n.toFixed(2)}`;
@@ -81,7 +81,9 @@ export default function UsagePage() {
             <h1 className="text-3xl font-bold">API Usage</h1>
             <p className="max-w-2xl text-base text-zinc-400">
               Every call to OpenAI made from this browser, with its estimated and
-              realized cost. Stored locally — nothing leaves your device.
+              realized cost. Stored locally — nothing leaves your device. Keeps
+              the most recent {USAGE_LOG_CAP} calls (this becomes unlimited once
+              usage moves to a database).
             </p>
             <Link
               href="/models"

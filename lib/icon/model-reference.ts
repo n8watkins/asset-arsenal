@@ -455,7 +455,7 @@ export const CAVEATS: { title: string; body: string; severity: "warn" | "info"; 
   {
     title: "The only current image model can't do transparent icons",
     severity: "warn",
-    body: "gpt-image-2 is the sole non-deprecated image model, but it does not support transparent backgrounds at all. Moving step 5 to it would break transparent icons unless we add post-processing. (Transparency itself does work on the images.edit endpoint for the gpt-image-1.x family — that part is fine today.)",
+    body: "gpt-image-2 is the sole non-deprecated image model, but it does not support transparent backgrounds at all. Moving step 5 to it would break transparent icons unless we add post-processing. Within the deprecation window, gpt-image-1.5 is the higher-fidelity transparency-capable option (it keeps transparency + input_fidelity), so it — not gpt-image-2 — is the natural interim migration target off gpt-image-1-mini until OpenAI ships a current model with transparency.",
     source: { label: "Image guide", url: "https://developers.openai.com/api/docs/guides/image-generation" },
   },
   {
