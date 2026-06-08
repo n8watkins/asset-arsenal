@@ -12,6 +12,7 @@ const TABS: Tab[] = [
   { href: "/", label: "Home" },
   { href: "/gallery", label: "Gallery" },
   { href: "/bench", label: "Bench" },
+  { href: "/models", label: "Models" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useRef, useCallback } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
@@ -915,6 +916,12 @@ export default function BenchPage() {
               <span className="text-cyan-400">exact resolved prompt</span> before
               you run, and feed each step&apos;s output into the next.
             </p>
+            <Link
+              href="/models"
+              className="self-start text-sm font-medium text-cyan-400/80 hover:text-cyan-300"
+            >
+              💲 Model costs &amp; capabilities →
+            </Link>
             {/* Artifact flow indicator */}
             <div className="mt-3 flex flex-wrap gap-2">
               <FlowBadge ok={!!state.sourceDataUrl} label="source" />
