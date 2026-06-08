@@ -37,8 +37,31 @@ import {
   type Stack,
   DEFAULT_STACK,
   type StepKey,
+  STEPS,
+  costForStep,
+  getModel,
 } from "@/lib/icon/model-reference";
 import { loadStacks } from "@/lib/icon/stacks";
+
+function fmtUsd(n: number): string {
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(4)}`;
+}
+
+// Estimated cost label for a bench section, given the selected stack.
+// `single` = the §5 case (one icon) vs §6 (the whole batch).
+function stepCostLabel(stepKey: StepKey, stack: Stack, single = false): string {
+  if (single && stepKey === "generateIcons") {
+    const per = getModel(stack.models.generateIcons)?.imagePricing?.[stack.quality.generateIcons] ?? 0;
+    return `≈ ${fmtUsd(per)} / icon`;
+  }
+  const step = STEPS.find((s) => s.key === stepKey)!;
+  const { cost } = costForStep(step, stack);
+  if (stepKey === "generateIcons") return `≈ ${fmtUsd(cost)} · ${stack.iconCount} icons`;
+  if (stepKey === "collectionImage") return `≈ ${fmtUsd(cost)}`;
+  return `≈ ${fmtUsd(cost)} est.`;
+}
 
 // ---------------------------------------------------------------------------
 // Shared bench artifacts — each step's output is lifted here so the next step
@@ -73,6 +96,7 @@ function SectionCard({
   inputs,
   output,
   model,
+  cost,
   children,
 }: {
   title: string;
@@ -80,6 +104,7 @@ function SectionCard({
   inputs: string;
   output: string;
   model: string;
+  cost: string;
   children: React.ReactNode;
 }) {
   return (
@@ -91,6 +116,9 @@ function SectionCard({
         <h2 className="text-zinc-100 text-xl font-semibold">{title}</h2>
         <span className="ml-auto font-mono text-xs text-cyan-300/80 bg-zinc-800 border border-zinc-700 rounded-md px-2.5 py-1">
           model: {model}
+        </span>
+        <span className="font-mono text-xs text-emerald-300/90 bg-emerald-950/40 border border-emerald-800/40 rounded-md px-2.5 py-1">
+          {cost}
         </span>
       </div>
       <p className="text-zinc-500 text-sm font-mono">
@@ -358,6 +386,7 @@ function Section1({
       inputs="source image"
       output="icon manifest JSON"
       model={state.stack.models.analyze}
+      cost={stepCostLabel("analyze", state.stack)}
     >
       <PromptDisclosure
         label="View exact prompt sent to vision model"
@@ -455,6 +484,7 @@ function Section2({
       inputs="icon manifest JSON"
       output="collection image prompt (text)"
       model={state.stack.models.collectionPrompt}
+      cost={stepCostLabel("collectionPrompt", state.stack)}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -562,6 +592,7 @@ function Section3({
       inputs="source image + manifest + collection prompt"
       output="collection image image"
       model={state.stack.models.collectionImage}
+      cost={stepCostLabel("collectionImage", state.stack)}
     >
       <PromptDisclosure
         label="View exact body sent to image model (live)"
@@ -687,6 +718,7 @@ function Section4({
       inputs="collection image + manifest"
       output="sharedStylePrompt + one prompt per icon"
       model={state.stack.models.individualPrompts}
+      cost={stepCostLabel("individualPrompts", state.stack)}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -795,6 +827,7 @@ function Section5({ state }: { state: BenchState }) {
       inputs="collection image + sharedStylePrompt + one icon prompt"
       output="single icon image"
       model={state.stack.models.generateIcons}
+      cost={stepCostLabel("generateIcons", state.stack, true)}
     >
       <PromptDisclosure
         label="View full wrapper sent to image model (live)"
@@ -898,6 +931,7 @@ function Section6({ state }: { state: BenchState }) {
       inputs="collection image + all icon prompts"
       output="all generated icons"
       model={state.stack.models.generateIcons}
+      cost={stepCostLabel("generateIcons", state.stack)}
     >
       <p className="text-zinc-400 text-sm">
         Generates every icon in{" "}
