@@ -12,6 +12,7 @@ import { readImageFile } from "@/lib/icon/download";
 import { SAMPLE_MANIFEST, SAMPLE_PROMPT_PACK } from "@/lib/icon/fixtures";
 import type { IconManifest, IconPrompt, GeneratedIcon } from "@/types/icon-pipeline";
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
+import GalleryView from "@/components/gallery/GalleryView";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -87,9 +88,15 @@ function RunButton({
 // Section 1 — Icon Analysis
 // ---------------------------------------------------------------------------
 
-function Section1() {
+function Section1({
+  externalImage,
+}: {
+  /** An image chosen from the gallery, fed in from BenchPage. */
+  externalImage?: { dataUrl: string; fileName?: string } | null;
+}) {
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -99,12 +106,24 @@ function Section1() {
 
   const loadFile = useCallback(async (f: File) => {
     setFile(f);
+    setFileName(f.name);
     setResult(null);
     setError(null);
     const { dataUrl: url } = await readImageFile(f);
     setDataUrl(url);
     setPreview(url);
   }, []);
+
+  // When the gallery feeds an image in, adopt it as the analysis image.
+  useEffect(() => {
+    if (!externalImage) return;
+    setFile(null);
+    setFileName(externalImage.fileName ?? "gallery-image");
+    setDataUrl(externalImage.dataUrl);
+    setPreview(externalImage.dataUrl);
+    setResult(null);
+    setError(null);
+  }, [externalImage]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -117,12 +136,12 @@ function Section1() {
   );
 
   const run = async () => {
-    if (!dataUrl || !file) return;
+    if (!dataUrl) return;
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const res = await analyzeImage(dataUrl, file.name);
+      const res = await analyzeImage(dataUrl, fileName ?? undefined);
       setResult(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -182,9 +201,10 @@ function Section1() {
         />
       </div>
 
-      {file && (
+      {fileName && (
         <p className="text-zinc-400 text-xs font-mono">
-          {file.name} ({Math.round(file.size / 1024)} KB)
+          {fileName}
+          {file ? ` (${Math.round(file.size / 1024)} KB)` : " (from gallery)"}
         </p>
       )}
 
@@ -457,6 +477,14 @@ function Section4() {
 // ---------------------------------------------------------------------------
 
 export default function BenchPage() {
+  // Image chosen from the gallery, fed into Section 1's analysis step.
+  // A fresh object each click guarantees the effect in Section1 re-runs even
+  // if the same image is picked twice.
+  const [analysisImage, setAnalysisImage] = useState<{
+    dataUrl: string;
+    fileName?: string;
+  } | null>(null);
+
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-10">
       <div className="max-w-4xl mx-auto flex flex-col gap-8">
@@ -477,7 +505,24 @@ export default function BenchPage() {
           </p>
         </div>
 
-        <Section1 />
+        {/* Bench-centric image gallery */}
+        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
+          <GalleryView
+            title="Image Gallery"
+            onUseImage={(img) =>
+              setAnalysisImage({
+                dataUrl: img.dataUrl,
+                fileName: img.fileName,
+              })
+            }
+          />
+          <p className="text-zinc-500 text-xs">
+            Click <span className="text-violet-400">Use</span> on any image to
+            send it to Section 1 below for analysis.
+          </p>
+        </section>
+
+        <Section1 externalImage={analysisImage} />
         <Section2 />
         <Section3 />
         <Section4 />

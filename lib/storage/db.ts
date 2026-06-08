@@ -20,6 +20,12 @@ export type StoredSource = {
   width?: number;
   height?: number;
   uploadedAt: string;
+  /**
+   * Optional gallery category. IndexedDB records are schemaless, so this is
+   * additive and needs no DB version bump. Records written before this field
+   * existed will simply have `category === undefined`.
+   */
+  category?: "source" | "icon-collection" | "icon";
   blob: Blob;
 };
 

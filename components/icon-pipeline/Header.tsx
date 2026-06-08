@@ -83,6 +83,12 @@ export default function Header({ currentStep, onReset }: HeaderProps) {
       {/* Right: bench link + reset button */}
       <div className="flex shrink-0 items-center gap-2">
         <Link
+          href="/gallery"
+          className="rounded px-3 py-1.5 font-mono text-xs font-medium text-cyan-400/80 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-800 hover:text-cyan-300 hover:ring-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          gallery
+        </Link>
+        <Link
           href="/bench"
           className="rounded px-3 py-1.5 font-mono text-xs font-medium text-cyan-400/80 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-800 hover:text-cyan-300 hover:ring-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
         >

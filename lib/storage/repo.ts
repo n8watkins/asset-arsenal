@@ -37,7 +37,10 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
  * Note: if imageUrl is an object URL (blob:...) it is still fetchable in the
  * same tab, so fetch() handles both forms correctly.
  */
-export async function saveSource(source: SourceImage): Promise<void> {
+export async function saveSource(
+  source: SourceImage,
+  category?: "source" | "icon-collection" | "icon"
+): Promise<void> {
   const blob = await dataUrlToBlob(source.imageUrl);
   const db = await getDB();
   const record: StoredSource = {
@@ -47,6 +50,7 @@ export async function saveSource(source: SourceImage): Promise<void> {
     width: source.width,
     height: source.height,
     uploadedAt: source.uploadedAt,
+    category,
     blob,
   };
   await db.put("sources", record);
