@@ -1,4 +1,4 @@
-import type { IconManifest } from "@/types/icon-pipeline";
+import type { IconManifest, TokenUsage } from "@/types/icon-pipeline";
 import { IconPipelineError } from "@/lib/icon/errors";
 import { buildCollectionPromptComposer } from "@/lib/icon/prompts";
 import { MODEL_ROLES } from "@/lib/icon/models";
@@ -13,7 +13,7 @@ import { getClient } from "./client";
 export async function composeCollectionPrompt(
   manifest: IconManifest,
   opts?: { model?: string },
-): Promise<string> {
+): Promise<{ collectionPrompt: string; usage?: TokenUsage }> {
   const client = getClient();
   const input = buildCollectionPromptComposer(JSON.stringify(manifest, null, 2));
 
@@ -30,7 +30,10 @@ export async function composeCollectionPrompt(
         "Model returned no collection prompt.",
       );
     }
-    return collectionPrompt;
+    const usage: TokenUsage | undefined = res.usage
+      ? { inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens }
+      : undefined;
+    return { collectionPrompt, usage };
   } catch (err) {
     if (err instanceof IconPipelineError) throw err;
     throw new IconPipelineError(

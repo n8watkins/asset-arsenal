@@ -1,5 +1,5 @@
 import { zodTextFormat } from "openai/helpers/zod";
-import type { IconManifest, IndividualIconPrompts } from "@/types/icon-pipeline";
+import type { IconManifest, IndividualIconPrompts, TokenUsage } from "@/types/icon-pipeline";
 import { IndividualIconPromptsSchema } from "@/lib/icon/schemas/individual-prompts.schema";
 import { IconPipelineError } from "@/lib/icon/errors";
 import { buildIndividualPromptComposer } from "@/lib/icon/prompts";
@@ -23,7 +23,7 @@ export async function composeIndividualPrompts(args: {
   collectionImageBase64: string;
   manifest: IconManifest;
   model?: string;
-}): Promise<IndividualIconPrompts> {
+}): Promise<{ individualPrompts: IndividualIconPrompts; usage?: TokenUsage }> {
   const client = getClient();
   const promptText = buildIndividualPromptComposer(
     JSON.stringify(args.manifest, null, 2),
@@ -54,7 +54,10 @@ export async function composeIndividualPrompts(args: {
         "Model returned no individual prompts.",
       );
     }
-    return prompts as IndividualIconPrompts;
+    const usage: TokenUsage | undefined = res.usage
+      ? { inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens }
+      : undefined;
+    return { individualPrompts: prompts as IndividualIconPrompts, usage };
   } catch (err) {
     if (err instanceof IconPipelineError) throw err;
     throw new IconPipelineError(

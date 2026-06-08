@@ -166,20 +166,26 @@ export type IconExtractionRun = {
 // API request / response shapes (one per step; see docs/API-CONTRACT.md)
 // ---------------------------------------------------------------------------
 
+// Token usage reported by text/vision calls — used to compute realized cost.
+export type TokenUsage = { inputTokens: number; outputTokens: number };
+
 // POST /api/icons/analyze
 export type AnalyzeRequest = {
   imageBase64: string;
   fileName?: string;
   model?: string;
 };
-export type AnalyzeResponse = { manifest: IconManifest };
+export type AnalyzeResponse = { manifest: IconManifest; usage?: TokenUsage };
 
 // POST /api/icons/compose-collection-prompt
 export type ComposeCollectionPromptRequest = {
   manifest: IconManifest;
   model?: string;
 };
-export type ComposeCollectionPromptResponse = { collectionPrompt: string };
+export type ComposeCollectionPromptResponse = {
+  collectionPrompt: string;
+  usage?: TokenUsage;
+};
 
 // POST /api/icons/generate-collection-image
 export type GenerateCollectionImageRequest = {
@@ -199,6 +205,7 @@ export type ComposeIndividualPromptsRequest = {
 };
 export type ComposeIndividualPromptsResponse = {
   individualPrompts: IndividualIconPrompts;
+  usage?: TokenUsage;
 };
 
 // POST /api/icons/generate-one

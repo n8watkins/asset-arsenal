@@ -19,8 +19,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const individualPrompts = await composeIndividualPrompts(parsed.data);
-    return Response.json({ individualPrompts });
+    const { individualPrompts, usage } = await composeIndividualPrompts(parsed.data);
+    return Response.json({ individualPrompts, usage });
   } catch (err) {
     console.error("[icons/compose-individual-prompts]", err);
     if (err instanceof IconPipelineError) {

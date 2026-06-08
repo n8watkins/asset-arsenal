@@ -1,5 +1,5 @@
 import { zodTextFormat } from "openai/helpers/zod";
-import type { IconManifest } from "@/types/icon-pipeline";
+import type { IconManifest, TokenUsage } from "@/types/icon-pipeline";
 import { IconManifestSchema } from "@/lib/icon/schemas/icon-manifest.schema";
 import { IconPipelineError } from "@/lib/icon/errors";
 import { ICON_ANALYSIS_PROMPT } from "@/lib/icon/prompts";
@@ -17,7 +17,7 @@ export async function analyzeIcons(
   imageBase64: string,
   _fileName?: string,
   opts?: { model?: string },
-): Promise<IconManifest> {
+): Promise<{ manifest: IconManifest; usage?: TokenUsage }> {
   const client = getClient();
   const dataUrl = toDataUrl(imageBase64);
 
@@ -40,7 +40,10 @@ export async function analyzeIcons(
     if (!manifest) {
       throw new IconPipelineError("analysis", "Model returned no manifest.");
     }
-    return manifest as IconManifest;
+    const usage: TokenUsage | undefined = res.usage
+      ? { inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens }
+      : undefined;
+    return { manifest: manifest as IconManifest, usage };
   } catch (err) {
     if (err instanceof IconPipelineError) throw err;
     throw new IconPipelineError(

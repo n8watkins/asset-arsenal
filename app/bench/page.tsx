@@ -40,8 +40,11 @@ import {
   STEPS,
   costForStep,
   getModel,
+  imageCostUSD,
+  realizedTextCostUSD,
 } from "@/lib/icon/model-reference";
 import { loadStacks } from "@/lib/icon/stacks";
+import type { TokenUsage } from "@/types/icon-pipeline";
 
 function fmtUsd(n: number): string {
   if (n >= 1) return `$${n.toFixed(2)}`;
@@ -54,13 +57,18 @@ function fmtUsd(n: number): string {
 function stepCostLabel(stepKey: StepKey, stack: Stack, single = false): string {
   if (single && stepKey === "generateIcons") {
     const per = getModel(stack.models.generateIcons)?.imagePricing?.[stack.quality.generateIcons] ?? 0;
-    return `≈ ${fmtUsd(per)} / icon`;
+    return `${fmtUsd(per)} / icon`;
   }
   const step = STEPS.find((s) => s.key === stepKey)!;
   const { cost } = costForStep(step, stack);
-  if (stepKey === "generateIcons") return `≈ ${fmtUsd(cost)} · ${stack.iconCount} icons`;
-  if (stepKey === "collectionImage") return `≈ ${fmtUsd(cost)}`;
-  return `≈ ${fmtUsd(cost)} est.`;
+  if (stepKey === "generateIcons") return `${fmtUsd(cost)} · ${stack.iconCount} icons`;
+  return fmtUsd(cost);
+}
+
+// Realized cost from a text call's reported token usage (null if not reported).
+function realizedTextLabel(model: string, usage?: TokenUsage): string | null {
+  if (!usage) return null;
+  return fmtUsd(realizedTextCostUSD(model, usage));
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +105,7 @@ function SectionCard({
   output,
   model,
   cost,
+  realized,
   children,
 }: {
   title: string;
@@ -105,6 +114,7 @@ function SectionCard({
   output: string;
   model: string;
   cost: string;
+  realized?: string | null;
   children: React.ReactNode;
 }) {
   return (
@@ -117,9 +127,20 @@ function SectionCard({
         <span className="ml-auto font-mono text-xs text-cyan-300/80 bg-zinc-800 border border-zinc-700 rounded-md px-2.5 py-1">
           model: {model}
         </span>
-        <span className="font-mono text-xs text-emerald-300/90 bg-emerald-950/40 border border-emerald-800/40 rounded-md px-2.5 py-1">
-          {cost}
+        <span
+          className="font-mono text-xs text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-md px-2.5 py-1"
+          title="Estimated cost for this step with the selected stack"
+        >
+          est {cost}
         </span>
+        {realized && (
+          <span
+            className="font-mono text-xs text-emerald-300/90 bg-emerald-950/40 border border-emerald-800/40 rounded-md px-2.5 py-1"
+            title="Actual realized cost from the last run"
+          >
+            actual {realized}
+          </span>
+        )}
       </div>
       <p className="text-zinc-500 text-sm font-mono">
         <span className="text-zinc-400">in:</span> {inputs}{"  "}
@@ -357,6 +378,7 @@ function Section1({
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IconManifest | null>(null);
+  const [realized, setRealized] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
@@ -364,13 +386,15 @@ function Section1({
     setBusy(true);
     setError(null);
     setResult(null);
+    setRealized(null);
     try {
-      const { manifest } = await analyzeImage(
+      const { manifest, usage } = await analyzeImage(
         state.sourceDataUrl,
         state.sourceFileName ?? undefined,
         state.stack.models.analyze,
       );
       setResult(manifest);
+      setRealized(realizedTextLabel(state.stack.models.analyze, usage));
       patch({ manifest });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -387,6 +411,7 @@ function Section1({
       output="icon manifest JSON"
       model={state.stack.models.analyze}
       cost={stepCostLabel("analyze", state.stack)}
+      realized={realized}
     >
       <PromptDisclosure
         label="View exact prompt sent to vision model"
@@ -438,6 +463,7 @@ function Section2({
   const [parseError, setParseError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [realized, setRealized] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const syncFromState = () => {
@@ -463,12 +489,14 @@ function Section2({
     setBusy(true);
     setError(null);
     setResult(null);
+    setRealized(null);
     try {
-      const { collectionPrompt } = await composeCollectionPrompt(
+      const { collectionPrompt, usage } = await composeCollectionPrompt(
         parsed,
         state.stack.models.collectionPrompt,
       );
       setResult(collectionPrompt);
+      setRealized(realizedTextLabel(state.stack.models.collectionPrompt, usage));
       patch({ collectionPrompt });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -485,6 +513,7 @@ function Section2({
       output="collection image prompt (text)"
       model={state.stack.models.collectionPrompt}
       cost={stepCostLabel("collectionPrompt", state.stack)}
+      realized={realized}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -542,6 +571,7 @@ function Section3({
   );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [realized, setRealized] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleManifest = (text: string) => {
@@ -568,6 +598,7 @@ function Section3({
     setBusy(true);
     setError(null);
     setResult(null);
+    setRealized(null);
     try {
       const { collectionImage } = await generateCollectionImage({
         sourceImageBase64: state.sourceDataUrl,
@@ -577,6 +608,9 @@ function Section3({
         quality: state.stack.quality.collectionImage,
       });
       setResult(collectionImage.imageUrl);
+      setRealized(
+        fmtUsd(imageCostUSD(state.stack.models.collectionImage, state.stack.quality.collectionImage, 1)),
+      );
       patch({ collectionImageDataUrl: collectionImage.imageUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -593,6 +627,7 @@ function Section3({
       output="collection image image"
       model={state.stack.models.collectionImage}
       cost={stepCostLabel("collectionImage", state.stack)}
+      realized={realized}
     >
       <PromptDisclosure
         label="View exact body sent to image model (live)"
@@ -671,6 +706,7 @@ function Section4({
   const [parseError, setParseError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IndividualIconPrompts | null>(null);
+  const [realized, setRealized] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleManifest = (text: string) => {
@@ -696,13 +732,15 @@ function Section4({
     setBusy(true);
     setError(null);
     setResult(null);
+    setRealized(null);
     try {
-      const { individualPrompts } = await composeIndividualPrompts({
+      const { individualPrompts, usage } = await composeIndividualPrompts({
         collectionImageBase64: state.collectionImageDataUrl,
         manifest: parsed,
         model: state.stack.models.individualPrompts,
       });
       setResult(individualPrompts);
+      setRealized(realizedTextLabel(state.stack.models.individualPrompts, usage));
       patch({ individualPrompts });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -719,6 +757,7 @@ function Section4({
       output="sharedStylePrompt + one prompt per icon"
       model={state.stack.models.individualPrompts}
       cost={stepCostLabel("individualPrompts", state.stack)}
+      realized={realized}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -782,6 +821,7 @@ function Section5({ state }: { state: BenchState }) {
   const [promptText, setPromptText] = useState(selected?.prompt ?? "");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeneratedIcon | null>(null);
+  const [realized, setRealized] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const onSelect = (id: string) => {
@@ -789,6 +829,7 @@ function Section5({ state }: { state: BenchState }) {
     const match = prompts.iconPrompts.find((p) => p.iconId === id);
     setPromptText(match?.prompt ?? "");
     setResult(null);
+    setRealized(null);
     setError(null);
   };
 
@@ -804,6 +845,7 @@ function Section5({ state }: { state: BenchState }) {
     setBusy(true);
     setError(null);
     setResult(null);
+    setRealized(null);
     try {
       const { generatedIcon } = await generateOneIcon({
         collectionImageBase64: state.collectionImageDataUrl,
@@ -813,6 +855,11 @@ function Section5({ state }: { state: BenchState }) {
         quality: state.stack.quality.generateIcons,
       });
       setResult(generatedIcon);
+      if (generatedIcon.status === "success") {
+        setRealized(
+          fmtUsd(imageCostUSD(state.stack.models.generateIcons, state.stack.quality.generateIcons, 1)),
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -828,6 +875,7 @@ function Section5({ state }: { state: BenchState }) {
       output="single icon image"
       model={state.stack.models.generateIcons}
       cost={stepCostLabel("generateIcons", state.stack, true)}
+      realized={realized}
     >
       <PromptDisclosure
         label="View full wrapper sent to image model (live)"
@@ -901,6 +949,7 @@ function Section6({ state }: { state: BenchState }) {
   const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeneratedIcon[] | null>(null);
+  const [realized, setRealized] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
@@ -908,6 +957,7 @@ function Section6({ state }: { state: BenchState }) {
     setBusy(true);
     setError(null);
     setResult(null);
+    setRealized(null);
     try {
       const { generatedIcons } = await generateIconsBatch({
         collectionImageBase64: state.collectionImageDataUrl,
@@ -916,6 +966,10 @@ function Section6({ state }: { state: BenchState }) {
         quality: state.stack.quality.generateIcons,
       });
       setResult(generatedIcons);
+      const ok = generatedIcons.filter((g) => g.status === "success").length;
+      setRealized(
+        fmtUsd(imageCostUSD(state.stack.models.generateIcons, state.stack.quality.generateIcons, ok)),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -932,6 +986,7 @@ function Section6({ state }: { state: BenchState }) {
       output="all generated icons"
       model={state.stack.models.generateIcons}
       cost={stepCostLabel("generateIcons", state.stack)}
+      realized={realized}
     >
       <p className="text-zinc-400 text-sm">
         Generates every icon in{" "}

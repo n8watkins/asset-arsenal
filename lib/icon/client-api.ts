@@ -1,6 +1,9 @@
 // Client-side typed fetch wrappers for the six pipeline API routes.
 // Each throws Error(<friendly message>) on non-2xx so callers can route the
 // message into the pipeline's error state.
+//
+// Every call is also appended to the local usage log (success AND failure) as a
+// side effect — logging never changes a wrapper's return value or thrown error.
 
 import type {
   AnalyzeResponse,
@@ -12,8 +15,17 @@ import type {
   IconManifest,
   IndividualIconPrompt,
   IndividualIconPrompts,
+  TokenUsage,
 } from "@/types/icon-pipeline";
-import type { ImageQuality } from "@/lib/icon/model-reference";
+import {
+  DEFAULT_STACK,
+  estimateStepCostUSD,
+  imageCostUSD,
+  realizedTextCostUSD,
+  type ImageQuality,
+  type StepKey,
+} from "@/lib/icon/model-reference";
+import { logUsage } from "@/lib/icon/usage-log";
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   let res: Response;
@@ -35,24 +47,105 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+// --- Usage logging helper ----------------------------------------------------
+// Runs a postJSON call, logs a UsageEntry for it (ok or failed), then returns
+// the response or rethrows. Logging is purely a side effect.
+
+type LogArgs = {
+  step: StepKey;
+  kind: "text" | "image";
+  model?: string;
+  quality?: ImageQuality;
+  count?: number;
+};
+
+function resolveModel(step: StepKey, model?: string): string {
+  return model ?? DEFAULT_STACK.models[step];
+}
+
+function resolveQuality(step: StepKey, quality?: ImageQuality): ImageQuality {
+  return (
+    quality ??
+    DEFAULT_STACK.quality[step === "collectionImage" ? "collectionImage" : "generateIcons"]
+  );
+}
+
+async function tracked<T>(args: LogArgs, run: () => Promise<T>): Promise<T> {
+  const model = resolveModel(args.step, args.model);
+  const count = args.count ?? 1;
+  const quality = args.kind === "image" ? resolveQuality(args.step, args.quality) : undefined;
+  const estCost = estimateStepCostUSD(args.step, model, { quality, count });
+
+  try {
+    const res = await run();
+
+    let realizedCost: number | null;
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    if (args.kind === "image") {
+      realizedCost = imageCostUSD(model, quality ?? "medium", count);
+    } else {
+      const usage = (res as { usage?: TokenUsage }).usage;
+      if (usage) {
+        inputTokens = usage.inputTokens;
+        outputTokens = usage.outputTokens;
+        realizedCost = realizedTextCostUSD(model, usage);
+      } else {
+        realizedCost = null;
+      }
+    }
+
+    logUsage({
+      step: args.step,
+      model,
+      kind: args.kind,
+      quality,
+      count,
+      estCost,
+      realizedCost,
+      inputTokens,
+      outputTokens,
+      ok: true,
+    });
+    return res;
+  } catch (err) {
+    logUsage({
+      step: args.step,
+      model,
+      kind: args.kind,
+      quality,
+      count,
+      estCost,
+      realizedCost: null,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
 // Step 1
 export function analyzeImage(
   imageBase64: string,
   fileName?: string,
   model?: string,
 ) {
-  return postJSON<AnalyzeResponse>("/api/icons/analyze", {
-    imageBase64,
-    fileName,
-    model,
-  });
+  return tracked({ step: "analyze", kind: "text", model }, () =>
+    postJSON<AnalyzeResponse>("/api/icons/analyze", {
+      imageBase64,
+      fileName,
+      model,
+    }),
+  );
 }
 
 // Step 2
 export function composeCollectionPrompt(manifest: IconManifest, model?: string) {
-  return postJSON<ComposeCollectionPromptResponse>(
-    "/api/icons/compose-collection-prompt",
-    { manifest, model },
+  return tracked({ step: "collectionPrompt", kind: "text", model }, () =>
+    postJSON<ComposeCollectionPromptResponse>(
+      "/api/icons/compose-collection-prompt",
+      { manifest, model },
+    ),
   );
 }
 
@@ -64,9 +157,13 @@ export function generateCollectionImage(args: {
   model?: string;
   quality?: ImageQuality;
 }) {
-  return postJSON<GenerateCollectionImageResponse>(
-    "/api/icons/generate-collection-image",
-    args,
+  return tracked(
+    { step: "collectionImage", kind: "image", model: args.model, quality: args.quality },
+    () =>
+      postJSON<GenerateCollectionImageResponse>(
+        "/api/icons/generate-collection-image",
+        args,
+      ),
   );
 }
 
@@ -76,9 +173,11 @@ export function composeIndividualPrompts(args: {
   manifest: IconManifest;
   model?: string;
 }) {
-  return postJSON<ComposeIndividualPromptsResponse>(
-    "/api/icons/compose-individual-prompts",
-    args,
+  return tracked({ step: "individualPrompts", kind: "text", model: args.model }, () =>
+    postJSON<ComposeIndividualPromptsResponse>(
+      "/api/icons/compose-individual-prompts",
+      args,
+    ),
   );
 }
 
@@ -90,7 +189,10 @@ export function generateOneIcon(args: {
   model?: string;
   quality?: ImageQuality;
 }) {
-  return postJSON<GenerateOneResponse>("/api/icons/generate-one", args);
+  return tracked(
+    { step: "generateIcons", kind: "image", model: args.model, quality: args.quality },
+    () => postJSON<GenerateOneResponse>("/api/icons/generate-one", args),
+  );
 }
 
 // Step 5 (batch)
@@ -100,5 +202,14 @@ export function generateIconsBatch(args: {
   model?: string;
   quality?: ImageQuality;
 }) {
-  return postJSON<GenerateBatchResponse>("/api/icons/generate-batch", args);
+  return tracked(
+    {
+      step: "generateIcons",
+      kind: "image",
+      model: args.model,
+      quality: args.quality,
+      count: args.individualPrompts.iconPrompts.length,
+    },
+    () => postJSON<GenerateBatchResponse>("/api/icons/generate-batch", args),
+  );
 }

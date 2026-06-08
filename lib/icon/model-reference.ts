@@ -380,6 +380,58 @@ function usdShort(n: number): string {
   return n >= 0.01 ? `$${n.toFixed(3)}` : `$${n.toFixed(4)}`;
 }
 
+// --- Per-call cost helpers (used by usage tracking + realized cost) ----------
+
+/** Exact realized cost of a text/vision call from reported token usage. */
+export function realizedTextCostUSD(
+  modelId: string,
+  usage: { inputTokens: number; outputTokens: number },
+): number {
+  const m = getModel(modelId);
+  if (!m?.tokenPricing) return 0;
+  return (
+    (usage.inputTokens * m.tokenPricing.inputPerM +
+      usage.outputTokens * m.tokenPricing.outputPerM) /
+    1_000_000
+  );
+}
+
+/** Exact cost of one or more generated images (deterministic per-image price). */
+export function imageCostUSD(
+  modelId: string,
+  quality: ImageQuality,
+  count = 1,
+): number {
+  const m = getModel(modelId);
+  if (!m?.imagePricing) return 0;
+  return m.imagePricing[quality] * count;
+}
+
+/**
+ * Estimated cost of a single step call BEFORE running it. Text steps use the
+ * step's token estimate; image steps are exact per-image × count.
+ */
+export function estimateStepCostUSD(
+  stepKey: StepKey,
+  modelId: string,
+  opts?: { quality?: ImageQuality; count?: number },
+): number {
+  const step = STEPS.find((s) => s.key === stepKey);
+  const model = getModel(modelId);
+  if (!step || !model) return 0;
+  if (step.kind === "text" && model.tokenPricing && step.textEstimate) {
+    return realizedTextCostUSD(modelId, {
+      inputTokens: step.textEstimate.inputTokens,
+      outputTokens: step.textEstimate.outputTokens,
+    });
+  }
+  if (step.kind === "image" && model.imagePricing) {
+    const quality = opts?.quality ?? step.image?.defaultQuality ?? "medium";
+    return imageCostUSD(modelId, quality, opts?.count ?? 1);
+  }
+  return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Sources (top-of-page) + caveats
 // ---------------------------------------------------------------------------
