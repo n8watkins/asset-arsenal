@@ -44,7 +44,7 @@ import {
   realizedTextCostUSD,
 } from "@/lib/icon/model-reference";
 import { loadStacks } from "@/lib/icon/stacks";
-import { persistBenchIcons } from "@/lib/icon/bench-persist";
+import { persistBenchIcons, persistBenchCollectionImage } from "@/lib/icon/bench-persist";
 import type { TokenUsage } from "@/types/icon-pipeline";
 
 function fmtUsd(n: number): string {
@@ -556,9 +556,11 @@ function Section2({
 function Section3({
   state,
   patch,
+  onPersist,
 }: {
   state: BenchState;
   patch: (p: Partial<BenchState>) => void;
+  onPersist: (dataUrl: string) => Promise<number>;
 }) {
   const [manifestText, setManifestText] = useState(() =>
     JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
@@ -573,6 +575,7 @@ function Section3({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [realized, setRealized] = useState<string | null>(null);
+  const [saved, setSaved] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleManifest = (text: string) => {
@@ -600,6 +603,7 @@ function Section3({
     setError(null);
     setResult(null);
     setRealized(null);
+    setSaved(null);
     try {
       const { collectionImage } = await generateCollectionImage({
         sourceImageBase64: state.sourceDataUrl,
@@ -613,6 +617,7 @@ function Section3({
         fmtUsd(imageCostUSD(state.stack.models.collectionImage, state.stack.quality.collectionImage, 1)),
       );
       patch({ collectionImageDataUrl: collectionImage.imageUrl });
+      setSaved(await onPersist(collectionImage.imageUrl));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -672,6 +677,7 @@ function Section3({
       {!state.sourceDataUrl && (
         <p className="text-zinc-500 text-sm">Provide a source image first.</p>
       )}
+      <SavedNote saved={saved} noun="collection image" />
       <OutputTabs
         empty={!error && !result}
         rawData={result ?? (error ? { error } : null)}
@@ -954,12 +960,13 @@ function Section5({
 }
 
 // "✓ saved to gallery" confirmation shown after a successful generation persists.
-function SavedNote({ saved }: { saved: number | null }) {
+function SavedNote({ saved, noun = "icon" }: { saved: number | null; noun?: string }) {
   if (!saved) return null;
   return (
     <p className="text-emerald-300/90 text-sm font-medium flex items-center gap-1.5">
       <span>✓</span>
-      Saved {saved} icon{saved === 1 ? "" : "s"} to the{" "}
+      Saved {saved} {noun}
+      {saved === 1 ? "" : "s"} to the{" "}
       <Link href="/gallery" className="underline hover:text-emerald-200">
         gallery
       </Link>
@@ -1088,6 +1095,11 @@ export default function BenchPage() {
     [state.manifest, state.collectionPrompt, state.individualPrompts],
   );
 
+  const persistCollectionImage = useCallback(
+    (dataUrl: string) => persistBenchCollectionImage(dataUrl),
+    [],
+  );
+
   // Saved stacks come from localStorage; load once on mount (client-only).
   const [savedStacks, setSavedStacks] = useState<Stack[]>([]);
   useEffect(() => {
@@ -1136,7 +1148,7 @@ export default function BenchPage() {
 
           <Section1 state={state} patch={patch} />
           <Section2 state={state} patch={patch} />
-          <Section3 state={state} patch={patch} />
+          <Section3 state={state} patch={patch} onPersist={persistCollectionImage} />
           <Section4 state={state} patch={patch} />
           <Section5 state={state} onPersist={persistIcons} />
           <Section6 state={state} onPersist={persistIcons} />

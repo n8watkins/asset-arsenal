@@ -5,11 +5,12 @@
 // storage failure must never break a generation, and re-running a step simply
 // appends more icons under the same per-session run record.
 
-import { saveRun, saveIcon } from "@/lib/storage/repo";
+import { saveRun, saveIcon, saveSource } from "@/lib/storage/repo";
 import type {
   GeneratedIcon,
   IconManifest,
   IndividualIconPrompts,
+  SourceImage,
 } from "@/types/icon-pipeline";
 
 async function attempt(label: string, fn: () => Promise<void>) {
@@ -59,4 +60,28 @@ export async function persistBenchIcons(
   }
 
   return success.length;
+}
+
+/**
+ * Persist a generated collection image to the gallery. It's an AI-generated
+ * artifact, so it's tagged with category "icon-collection" — today the gallery
+ * shows it in the "AI-generated" group; later that tag can split it into its own
+ * "collections" category without a migration. Returns 1 on save, 0 otherwise.
+ */
+export async function persistBenchCollectionImage(
+  dataUrl: string,
+): Promise<number> {
+  let saved = 0;
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  const source: SourceImage = {
+    id: crypto.randomUUID(),
+    imageUrl: dataUrl,
+    fileName: `collection-image-${stamp}.png`,
+    uploadedAt: new Date().toISOString(),
+  };
+  await attempt("saveSource(collection)", async () => {
+    await saveSource(source, "icon-collection");
+    saved = 1;
+  });
+  return saved;
 }

@@ -13,7 +13,10 @@ import { IMAGE_UPLOAD_LIMITS } from "@/lib/icon/models";
 
 export interface GalleryImage {
   id: string;
+  /** Drives behaviour (drag, data-url fetch, delete): a source vs an icon record. */
   kind: "source" | "icon";
+  /** Drives the badge + which group it shows in: user-uploaded vs AI-generated. */
+  origin: "uploaded" | "ai";
   objectUrl: string;
   fileName: string;
   getDataUrl: () => Promise<string | undefined>;
@@ -59,16 +62,16 @@ function TrashIcon() {
 // Tile
 // ---------------------------------------------------------------------------
 
-function OriginBadge({ kind }: { kind: "source" | "icon" }) {
-  const isSource = kind === "source";
-  const classes = isSource
+function OriginBadge({ origin }: { origin: "uploaded" | "ai" }) {
+  const isUploaded = origin === "uploaded";
+  const classes = isUploaded
     ? "bg-cyan-600/20 text-cyan-300 border-cyan-500/40"
     : "bg-violet-600/20 text-violet-300 border-violet-500/40";
   return (
     <span
       className={`text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded border ${classes}`}
     >
-      {isSource ? "Uploaded" : "AI-generated"}
+      {isUploaded ? "Uploaded" : "AI-generated"}
     </span>
   );
 }
@@ -165,7 +168,7 @@ function GalleryTile({
           draggable={false}
         />
         <div className="absolute top-1.5 left-1.5">
-          <OriginBadge kind={image.kind} />
+          <OriginBadge origin={image.origin} />
         </div>
       </div>
 
@@ -217,7 +220,7 @@ function GalleryTile({
 
 function GalleryGroup({
   heading,
-  kind,
+  accent,
   images,
   compact,
   readOnly,
@@ -226,7 +229,7 @@ function GalleryGroup({
   onRemove,
 }: {
   heading: string;
-  kind: "source" | "icon";
+  accent: "uploaded" | "ai";
   images: GalleryImage[];
   compact: boolean;
   readOnly: boolean;
@@ -234,7 +237,7 @@ function GalleryGroup({
   onUseImage?: GalleryViewProps["onUseImage"];
   onRemove: (img: GalleryImage) => Promise<void>;
 }) {
-  const accentDot = kind === "source" ? "bg-cyan-400" : "bg-violet-400";
+  const accentDot = accent === "uploaded" ? "bg-cyan-400" : "bg-violet-400";
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -295,15 +298,37 @@ export default function GalleryView({
   const [showUpload, setShowUpload] = useState(!compact && !readOnly);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const sourceImages = useMemo<GalleryImage[]>(
+  // Uploaded sources vs. AI-generated collection images both live in the
+  // "sources" store; the category tag separates them. Collection images are
+  // AI-generated, so they render in the AI-generated group (kind stays "source"
+  // so drag/use/delete still behave like a source).
+  const uploadedImages = useMemo<GalleryImage[]>(
     () =>
-      sources.map((s) => ({
-        id: s.id,
-        kind: "source" as const,
-        objectUrl: s.objectUrl,
-        fileName: s.fileName ?? "Untitled",
-        getDataUrl: () => getSourceAsDataUrl(s.id),
-      })),
+      sources
+        .filter((s) => s.category !== "icon-collection")
+        .map((s) => ({
+          id: s.id,
+          kind: "source" as const,
+          origin: "uploaded" as const,
+          objectUrl: s.objectUrl,
+          fileName: s.fileName ?? "Untitled",
+          getDataUrl: () => getSourceAsDataUrl(s.id),
+        })),
+    [sources]
+  );
+
+  const collectionImages = useMemo<GalleryImage[]>(
+    () =>
+      sources
+        .filter((s) => s.category === "icon-collection")
+        .map((s) => ({
+          id: s.id,
+          kind: "source" as const,
+          origin: "ai" as const,
+          objectUrl: s.objectUrl,
+          fileName: s.fileName ?? "Collection image",
+          getDataUrl: () => getSourceAsDataUrl(s.id),
+        })),
     [sources]
   );
 
@@ -312,11 +337,18 @@ export default function GalleryView({
       icons.map((ic) => ({
         id: ic.id,
         kind: "icon" as const,
+        origin: "ai" as const,
         objectUrl: ic.objectUrl,
         fileName: ic.iconName,
         getDataUrl: () => getIconAsDataUrl(ic.id),
       })),
     [icons]
+  );
+
+  // AI-generated group = collection images first, then individual icons.
+  const aiImages = useMemo<GalleryImage[]>(
+    () => [...collectionImages, ...iconImages],
+    [collectionImages, iconImages]
   );
 
   async function handleAddFiles(files: FileList | File[]) {
@@ -435,8 +467,8 @@ export default function GalleryView({
         >
           <GalleryGroup
             heading="Uploaded"
-            kind="source"
-            images={sourceImages}
+            accent="uploaded"
+            images={uploadedImages}
             compact={compact}
             readOnly={readOnly}
             emptyMessage="No uploaded images yet."
@@ -445,11 +477,11 @@ export default function GalleryView({
           />
           <GalleryGroup
             heading="AI-generated"
-            kind="icon"
-            images={iconImages}
+            accent="ai"
+            images={aiImages}
             compact={compact}
             readOnly={readOnly}
-            emptyMessage="No generated icons yet. Run the pipeline to create some."
+            emptyMessage="No generated images yet. Run the pipeline to create some."
             onUseImage={onUseImage}
             onRemove={handleRemove}
           />
