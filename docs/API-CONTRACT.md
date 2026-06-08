@@ -13,7 +13,7 @@ SDKs: `next@16.2.7`, `openai@6.42.0`, `zod@^4.4.3`, React 19, Node 22.
 ## The pipeline — a 6-step artifact chain
 
 The app is the memory layer; each step explicitly passes the artifacts the next
-one needs. The **contact sheet** (collection image) is the visual style anchor:
+one needs. The **collection image** is the visual style anchor:
 steps 4 and 5 pass it back to the model as a reference image.
 
 ```
@@ -23,10 +23,10 @@ iconManifest
   ↓  /api/icons/compose-collection-prompt     (text)
 collectionPrompt
   ↓  /api/icons/generate-collection-image     (images.edit, source as reference)
-collectionImage (contact sheet)
-  ↓  /api/icons/compose-individual-prompts    (vision, contact sheet as input)
+collectionImage
+  ↓  /api/icons/compose-individual-prompts    (vision, collection image as input)
 individualPrompts { sharedStylePrompt, iconPrompts[] }
-  ↓  /api/icons/generate-one | generate-batch (images.edit, contact sheet as reference)
+  ↓  /api/icons/generate-one | generate-batch (images.edit, collection image as reference)
 generatedIcons[]
 ```
 
@@ -36,7 +36,7 @@ generatedIcons[]
 export const MODEL_ROLES = {
   visionAnalyzerModel:   "gpt-5.4-mini",    // step 1: image      -> manifest JSON
   collectionPromptModel: "gpt-5.4-nano",    // step 2: manifest   -> collection prompt (text)
-  collectionImageModel:  "gpt-image-1-mini",// step 3: src+prompt -> contact sheet
+  collectionImageModel:  "gpt-image-1-mini",// step 3: src+prompt -> collection image
   individualPromptModel: "gpt-5.4-mini",    // step 4: sheet+manifest -> prompts JSON (vision)
   imageGeneratorModel:   "gpt-image-1-mini",// step 5: sheet+prompt -> single icon
 } as const;
@@ -75,10 +75,10 @@ JSON), so we use `responses.create` and read `res.output_text.trim()`.
 
 ### Step 4 — compose individual prompts (vision)
 
-Same vision shape as step 1, but the **contact sheet** is the `input_image` and
+Same vision shape as step 1, but the **collection image** is the `input_image` and
 the manifest is interpolated into the text. Returns
 `{ sharedStylePrompt, iconPrompts[] }` where each prompt has
-`{ iconId, iconName, concept, contactSheetReference, prompt }`.
+`{ iconId, iconName, concept, collectionImageReference, prompt }`.
 
 ## Image generation with a reference image — `images.edit`
 
@@ -91,11 +91,11 @@ URL into an `Uploadable` via `toFile` (see `lib/openai/to-file.ts`).
 const file = await imageBase64ToFile(base64, "ref.png"); // toFile(buffer, name, { type })
 const res = await client.images.edit({
   model: MODEL_ROLES.imageGeneratorModel,
-  image: file,                 // step 3: source image; step 5: contact sheet
+  image: file,                 // step 3: source image; step 5: collection image
   prompt: wrappedPrompt,
   n: 1,
   size: "1024x1024",           // 1024x1024 | 1024x1536 | 1536x1024 | auto
-  background: "transparent",   // step 5 icons; step 3 contact sheet uses "auto"
+  background: "transparent",   // step 5 icons; step 3 collection image uses "auto"
   quality: "medium",           // "low" | "medium" | "high" | "auto"
 });
 const b64 = res.data?.[0]?.b64_json;          // gpt-image returns b64_json

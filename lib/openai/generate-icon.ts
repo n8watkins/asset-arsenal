@@ -11,7 +11,7 @@ import { imageBase64ToFile } from "./to-file";
 /**
  * Step 5 — generate one standalone icon.
  *
- * The contact sheet is passed as the visual style reference (via images.edit)
+ * The collection image is passed as the visual style reference (via images.edit)
  * alongside the wrapped per-icon prompt, so each icon matches the family.
  */
 export async function generateIcon(
@@ -26,14 +26,14 @@ export async function generateIcon(
   });
 
   try {
-    const contactSheet = await imageBase64ToFile(
+    const collectionImageFile = await imageBase64ToFile(
       args.collectionImageBase64,
-      "contact-sheet.png",
+      "collection-image.png",
     );
 
     const res = await client.images.edit({
       model: MODEL_ROLES.imageGeneratorModel,
-      image: contactSheet,
+      image: collectionImageFile,
       prompt: wrappedPrompt,
       n: 1,
       size: "1024x1024",

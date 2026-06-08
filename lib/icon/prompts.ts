@@ -44,7 +44,7 @@ Set iconCount to the number of icons you return.
 If a style field does not apply (e.g. there is no glow), set glowStyle to null.`;
 
 // ---------------------------------------------------------------------------
-// Step 2 — Icon manifest -> icon collection (contact sheet) prompt
+// Step 2 — Icon manifest -> icon collection image prompt
 // ---------------------------------------------------------------------------
 
 export function buildCollectionPromptComposer(manifestJson: string): string {
@@ -102,7 +102,7 @@ ${collectionPrompt}`;
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — Contact sheet + manifest -> one prompt per icon
+// Step 4 — Collection image + manifest -> one prompt per icon
 // ---------------------------------------------------------------------------
 
 export function buildIndividualPromptComposer(manifestJson: string): string {
@@ -110,12 +110,12 @@ export function buildIndividualPromptComposer(manifestJson: string): string {
 
 You will receive:
 1. the original icon manifest JSON
-2. a contact sheet image showing the approved icon family style
+2. a collection image image showing the approved icon family style
 
 Your task:
 Create one image-generation prompt for each icon in the manifest.
 
-Each prompt should generate a single standalone icon that matches the contact sheet style.
+Each prompt should generate a single standalone icon that matches the collection image style.
 
 Global style to preserve:
 - premium dark-mode SaaS/developer-dashboard icon family
@@ -128,7 +128,7 @@ Global style to preserve:
 - consistent stroke weight, padding, scale, and glow intensity
 
 Important:
-- Use the contact sheet image as the visual style reference.
+- Use the collection image image as the visual style reference.
 - Use the manifest as the source of truth for icon names, concepts, and meanings.
 - Preserve the shared icon family style.
 
@@ -137,14 +137,14 @@ Each individual prompt must:
 - use 1:1 square format
 - be centered
 - be reusable as a dashboard icon asset
-- match the contact sheet style
+- match the collection image style
 - include the icon's concept and visual description
 - avoid labels, numbers, fake text, captions, watermarks, dashboards, cards, charts, buttons, full UI screens, and extra decoration
 
 For each icon set:
 - iconId and iconName from the manifest
 - concept from the manifest
-- contactSheetReference: describe where this icon appears in the contact sheet if possible (e.g. "row 2, column 3")
+- collectionImageReference: describe where this icon appears in the collection image if possible (e.g. "row 2, column 3")
 - prompt: the final image-generation prompt for this single icon
 
 Also write a sharedStylePrompt: a shared style paragraph to reuse in every generation.
@@ -154,7 +154,7 @@ ${manifestJson}`;
 }
 
 // ---------------------------------------------------------------------------
-// Step 5 — Generation wrapper for a single icon (contact sheet attached)
+// Step 5 — Generation wrapper for a single icon (collection image attached)
 // ---------------------------------------------------------------------------
 
 export function buildIconGenerationWrapper(args: {
@@ -165,7 +165,7 @@ export function buildIconGenerationWrapper(args: {
 }): string {
   return `Create exactly one isolated reusable icon asset.
 
-Use the attached icon contact sheet as the visual style reference. Match the same icon family style, stroke weight, glow intensity, proportions, padding, and dark-mode presentation.
+Use the attached icon collection image as the visual style reference. Match the same icon family style, stroke weight, glow intensity, proportions, padding, and dark-mode presentation.
 
 Shared icon family style:
 ${args.sharedStylePrompt}

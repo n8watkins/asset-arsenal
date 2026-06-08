@@ -6,11 +6,11 @@ import { getClient } from "./client";
 import { imageBase64ToFile } from "./to-file";
 
 /**
- * Step 3 — generate the icon collection image (contact sheet).
+ * Step 3 — generate the icon collection image.
  *
  * Sends the source image as a visual reference (via images.edit) together with
  * the manifest (source of truth for which icons appear) and the composed
- * collection prompt. The contact sheet is the visual anchor for steps 4 & 5.
+ * collection prompt. The collection image is the visual anchor for steps 4 & 5.
  */
 export async function generateCollectionImage(args: {
   sourceImageBase64: string;
@@ -32,7 +32,7 @@ export async function generateCollectionImage(args: {
       prompt: body,
       n: 1,
       size: "1024x1024",
-      // The contact sheet is a presentation surface (dark navy), not a
+      // The collection image is a presentation surface (dark navy), not a
       // transparent asset — let the model pick the best background.
       background: "auto",
       quality: "high",

@@ -113,16 +113,16 @@ export default function DebugDrawer({ run }: DebugDrawerProps) {
               </pre>
             </section>
 
-            {/* Contact sheet */}
+            {/* Collection image */}
             {run.collectionImage?.imageUrl && (
               <section>
                 <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">
-                  Contact Sheet
+                  Collection Image
                 </p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={run.collectionImage.imageUrl}
-                  alt="contact sheet"
+                  alt="collection image"
                   className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-900"
                 />
               </section>

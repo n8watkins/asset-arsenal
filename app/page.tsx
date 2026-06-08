@@ -132,7 +132,7 @@ export default function Home() {
     }
   }, [p, run.manifest]);
 
-  // ---- Step 3: generate contact sheet ----
+  // ---- Step 3: generate collection image ----
   const handleGenerateCollectionImage = useCallback(async () => {
     if (!run.manifest || !run.collectionPrompt || !run.sourceImage?.imageUrl) return;
     p.startCollectionImage();
@@ -146,7 +146,7 @@ export default function Home() {
     } catch (e) {
       p.setError(
         "collection_image",
-        e instanceof Error ? e.message : "Contact sheet generation failed.",
+        e instanceof Error ? e.message : "Collection image generation failed.",
       );
     }
   }, [p, run.manifest, run.collectionPrompt, run.sourceImage]);
@@ -303,22 +303,22 @@ export default function Home() {
                 onClick={handleGenerateCollectionImage}
                 busy={currentStep === "generating_collection_image"}
                 disabled={!!run.collectionImage}
-                label="Generate contact sheet →"
+                label="Generate collection image →"
               />
             </StepCard>
           )}
 
           {currentStep === "generating_collection_image" && (
-            <StatusLine text="Generating the icon collection image (contact sheet)…" />
+            <StatusLine text="Generating the icon collection image…" />
           )}
 
-          {/* Step 3 result — contact sheet */}
+          {/* Step 3 result — collection image */}
           {run.collectionImage?.imageUrl && (
-            <StepCard title="3 · Contact sheet">
+            <StepCard title="3 · Collection image">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={run.collectionImage.imageUrl}
-                alt="contact sheet"
+                alt="collection image"
                 className="w-full rounded-xl border border-zinc-800 bg-zinc-950 object-contain"
               />
               <NextButton
@@ -331,7 +331,7 @@ export default function Home() {
           )}
 
           {currentStep === "composing_individual_prompts" && (
-            <StatusLine text="Composing one prompt per icon from the contact sheet…" />
+            <StatusLine text="Composing one prompt per icon from the collection image…" />
           )}
 
           {/* Step 4 result — individual prompts */}
@@ -354,7 +354,7 @@ export default function Home() {
           )}
 
           {currentStep === "generating_icons" && (
-            <StatusLine text="Generating each icon from the contact sheet…" />
+            <StatusLine text="Generating each icon from the collection image…" />
           )}
 
           {/* Step 5 result — generated icons */}

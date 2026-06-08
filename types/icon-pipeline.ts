@@ -6,11 +6,11 @@
 //   sourceImage
 //     → iconManifest                (step 1: analyze)
 //     → collectionPrompt            (step 2: compose collection prompt)
-//     → collectionImage             (step 3: generate the contact sheet)
+//     → collectionImage             (step 3: generate the collection image)
 //     → individualPrompts           (step 4: compose one prompt per icon)
 //     → generatedIcons[]            (step 5: generate each icon)
 //
-// The contact sheet (collectionImage) is the visual style anchor: steps 4 and 5
+// The collection image (collectionImage) is the visual style anchor: steps 4 and 5
 // pass it to the model as a reference image so every icon matches the family.
 
 export type Confidence = "high" | "medium" | "low";
@@ -59,7 +59,7 @@ export type IconManifest = {
 };
 
 // ---------------------------------------------------------------------------
-// Step 2 — Icon collection (contact sheet) prompt
+// Step 2 — Icon collection (collection image) prompt
 // ---------------------------------------------------------------------------
 
 // The composer returns a single plain-text image-generation prompt.
@@ -68,7 +68,7 @@ export type CollectionPromptResult = {
 };
 
 // ---------------------------------------------------------------------------
-// Step 3 — Icon collection image (the contact sheet)
+// Step 3 — Icon collection image (the collection image)
 // ---------------------------------------------------------------------------
 
 export type CollectionImage = {
@@ -80,14 +80,14 @@ export type CollectionImage = {
 };
 
 // ---------------------------------------------------------------------------
-// Step 4 — Individual icon prompts (composed against the contact sheet)
+// Step 4 — Individual icon prompts (composed against the collection image)
 // ---------------------------------------------------------------------------
 
 export type IndividualIconPrompt = {
   iconId: string;
   iconName: string;
   concept: string;
-  contactSheetReference: string;
+  collectionImageReference: string;
   prompt: string;
 };
 

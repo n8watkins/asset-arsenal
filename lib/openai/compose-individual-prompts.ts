@@ -13,9 +13,9 @@ function toDataUrl(imageBase64: string): string {
 }
 
 /**
- * Step 4 — contact sheet + manifest -> one prompt per icon.
+ * Step 4 — collection image + manifest -> one prompt per icon.
  *
- * Vision call: the contact sheet is attached as the visual style reference and
+ * Vision call: the collection image is attached as the visual style reference and
  * the manifest is the source of truth for names/concepts. Returns the shared
  * style paragraph plus an individual prompt for each icon.
  */

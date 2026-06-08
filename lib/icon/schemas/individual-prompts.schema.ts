@@ -7,7 +7,7 @@ export const IndividualIconPromptSchema = z.object({
   iconId: z.string(),
   iconName: z.string(),
   concept: z.string(),
-  contactSheetReference: z.string(),
+  collectionImageReference: z.string(),
   prompt: z.string(),
 });
 

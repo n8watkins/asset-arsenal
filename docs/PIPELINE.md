@@ -7,12 +7,12 @@ is exercised step-by-step in the `/bench` route.
 
 ---
 
-## Design philosophy: the contact sheet as the visual anchor
+## Design philosophy: the collection image as the visual anchor
 
-The pipeline builds a **contact sheet** (a single image containing every icon
+The pipeline builds a **collection image** (a single image containing every icon
 in the family) before generating any individual icon. Once that image exists,
 every subsequent step passes it back to the model as an attached reference
-image. This is what keeps all the icons visually consistent — the contact
+image. This is what keeps all the icons visually consistent — the collection
 sheet is the style source of truth, not just a description of one.
 
 The image steps (`generate-collection-image` and `generate-one` /
@@ -147,9 +147,9 @@ A ready-to-use image-generation prompt describing:
 
 ---
 
-## Step 3 — Generate collection image (contact sheet) → `collectionImage`
+## Step 3 — Generate collection image → `collectionImage`
 
-**Goal.** Generate the **contact sheet** — a single image that shows all icons
+**Goal.** Generate the **collection image** — a single image that shows all icons
 in the family together, in the shared style. This image becomes the visual
 style anchor for every icon generated afterward.
 
@@ -183,7 +183,7 @@ The model returns `b64_json`; the route converts it to a data URL.
 ```ts
 {
   id: string;
-  imageUrl: string;      // data URL of the contact sheet
+  imageUrl: string;      // data URL of the collection image
   promptUsed: string;    // the collection prompt sent to the model
   modelUsed: string;
   createdAt: string;
@@ -196,7 +196,7 @@ The model returns `b64_json`; the route converts it to a data URL.
 
 ## Step 4 — Compose individual prompts → `individualPrompts`
 
-**Goal.** Using the contact sheet as a visual style reference, produce one
+**Goal.** Using the collection image as a visual style reference, produce one
 carefully-crafted image-generation prompt for each icon in the manifest. Also
 produce a shared style paragraph that every individual generation will include.
 
@@ -220,7 +220,7 @@ text format: zodTextFormat(IndividualIconPromptsSchema, "individual_icon_prompts
 ```
 
 The prompt (see `lib/icon/prompts.ts → buildIndividualPromptComposer`) asks
-the model to ground every icon prompt in the contact sheet's actual style and
+the model to ground every icon prompt in the collection image's actual style and
 to note the icon's position in the sheet where possible.
 
 **Output artifact — `IndividualIconPrompts`.**
@@ -232,7 +232,7 @@ to note the icon's position in the sheet where possible.
     iconId: string;
     iconName: string;
     concept: string;
-    contactSheetReference: string;   // e.g. "row 2, column 3"
+    collectionImageReference: string;   // e.g. "row 2, column 3"
     prompt: string;                  // icon-specific generation prompt
   }>;
 }
@@ -245,7 +245,7 @@ to note the icon's position in the sheet where possible.
 ## Step 5 — Generate each icon → `generatedIcons[]`
 
 **Goal.** Render each icon as a standalone, reusable 1:1 square asset that
-visually matches the contact sheet family style.
+visually matches the collection image family style.
 
 **Inputs (per icon).**
 - `collectionImage` (base64) — attached as the reference image via
@@ -309,10 +309,10 @@ iconManifest
   ↓  /api/icons/compose-collection-prompt      (text-only, gpt-5.4-nano)
 collectionPrompt
   ↓  /api/icons/generate-collection-image      (images.edit, gpt-image-1-mini; source image attached)
-collectionImage  ◄── the contact sheet / visual style anchor
-  ↓  /api/icons/compose-individual-prompts     (vision, gpt-5.4-mini; contact sheet attached)
+collectionImage  ◄── the collection image / visual style anchor
+  ↓  /api/icons/compose-individual-prompts     (vision, gpt-5.4-mini; collection image attached)
 individualPrompts  { sharedStylePrompt, iconPrompts[] }
-  ↓  /api/icons/generate-one | generate-batch  (images.edit, gpt-image-1-mini; contact sheet attached)
+  ↓  /api/icons/generate-one | generate-batch  (images.edit, gpt-image-1-mini; collection image attached)
 generatedIcons[]
 ```
 
@@ -328,17 +328,17 @@ generatedIcons[]
    converts the manifest into a clean natural-language prompt that describes
    the full icon family grid.
 
-3. **Generate that all-icons image (the contact sheet) from source + JSON + prompt.**
+3. **Generate that all-icons image (the collection image) from source + JSON + prompt.**
    An image model receives the original screenshot as a visual reference, the
    manifest as the icon checklist, and the composed prompt — and produces the
-   contact sheet.
+   collection image.
 
-4. **Use the contact sheet + JSON to make per-icon prompts.** A vision model
-   looks at the contact sheet and the manifest together to write one
+4. **Use the collection image + JSON to make per-icon prompts.** A vision model
+   looks at the collection image and the manifest together to write one
    tightly-scoped generation prompt per icon, grounded in the sheet's actual
    rendered style.
 
-5. **Generate each icon from the contact sheet + its prompt.** For each icon,
-   an image model receives the contact sheet as the visual reference and the
+5. **Generate each icon from the collection image + its prompt.** For each icon,
+   an image model receives the collection image as the visual reference and the
    wrapped per-icon prompt — producing a standalone, reusable asset that
    matches the family.

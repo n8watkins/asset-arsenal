@@ -1,159 +1,419 @@
-// Model reference data for the /models infographic page.
+// Model reference + cost model for the /models page.
 //
-// Sourced from OpenAI's official docs (developers.openai.com) on the date below
-// via research. Pricing and capabilities change — update this file and bump
-// REFERENCE_ACCESSED when you re-verify. Citations live alongside each model so
-// every number on the page is traceable.
+// Sourced from OpenAI's official docs (developers.openai.com) on REFERENCE_ACCESSED
+// via research. Pricing and capabilities change — update this file and bump the
+// date when you re-verify. Every figure is traceable to a citation below.
+//
+// Designed to expand: today it's the OpenAI "vertical stack", but the shapes
+// (Provider, Capability, CatalogModel, PipelineStep, Stack) are provider-neutral
+// so Gemini / Flux / etc. can be added as more catalog entries later.
+
+import { MODEL_ROLES } from "@/lib/icon/models";
 
 export const REFERENCE_ACCESSED = "2026-06-08";
 
 export type Citation = { label: string; url: string };
 
-export type Modalities = {
-  textIn: boolean;
-  textOut: boolean;
-  visionIn: boolean;
-  imageOut: boolean;
+export type Provider = "OpenAI"; // future: "Google" | "BlackForestLabs" | ...
+
+// What a model can do / what a step needs. Steps list required + preferred caps.
+export type Capability =
+  | "text"
+  | "vision"
+  | "structuredOutput"
+  | "imageEdit"
+  | "transparentBg";
+
+export const CAPABILITY_LABEL: Record<Capability, string> = {
+  text: "text",
+  vision: "vision in",
+  structuredOutput: "structured JSON",
+  imageEdit: "image edit (reference)",
+  transparentBg: "transparent bg",
 };
 
-export type TokenPricing = {
-  inputPerM: number;
-  cachedInputPerM?: number;
-  outputPerM: number;
-};
+export type ModelStatus = "current" | "deprecated";
 
-// Per-image USD at 1024×1024 by quality tier.
-export type PerImagePricing = { low: number; medium: number; high: number };
-
-export type ModelRef = {
+export type CatalogModel = {
   id: string;
-  tier: string; // short label, e.g. "mini · text+vision"
-  role: string; // role in THIS app's pipeline
-  pipelineSteps: string; // which steps use it
-  whatItDoes: string;
-  modalities: Modalities;
+  provider: Provider;
+  kind: "text" | "image";
+  capabilities: Capability[];
   contextWindow?: number;
   maxOutput?: number;
   knowledgeCutoff?: string;
-  tokenPricing?: TokenPricing;
-  image?: {
-    perImage1024: PerImagePricing;
-    sizes: string[];
-    imageOutputPerM: number;
-    textInputPerM: number;
-    imageInputCachedPerM: number;
-    outputTokens1024: { low: number; medium: number; high: number };
-  };
-  verification: string; // verification status note
+  // text models
+  tokenPricing?: { inputPerM: number; cachedInputPerM?: number; outputPerM: number };
+  // image models — USD per image at 1024×1024 by quality
+  imagePricing?: { low: number; medium: number; high: number };
+  status: ModelStatus;
+  deprecation?: { since: string; shutdown: string };
+  note?: string;
   citations: Citation[];
 };
 
-export const MODELS: ModelRef[] = [
-  {
-    id: "gpt-5.4-mini",
-    tier: "mini · text + vision",
-    role: "Vision analysis + per-icon prompt composition",
-    pipelineSteps: "Step 1 (analyze) · Step 4 (compose individual prompts)",
-    whatItDoes:
-      "OpenAI's strongest GPT-5.4 “mini” tier — faster and cheaper than full GPT-5.4, above gpt-5.4-nano. Reads the uploaded screenshot and the generated contact sheet and returns structured JSON. Released 2026-03-17.",
-    modalities: { textIn: true, textOut: true, visionIn: true, imageOut: false },
-    contextWindow: 400_000,
-    maxOutput: 128_000,
-    knowledgeCutoff: "2025-08-31",
-    tokenPricing: { inputPerM: 0.75, cachedInputPerM: 0.075, outputPerM: 4.5 },
-    verification: "Verified — exact ID in official docs.",
-    citations: [
-      { label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.4-mini" },
-      { label: "Pricing", url: "https://developers.openai.com/api/docs/pricing" },
-      { label: "Announcement", url: "https://openai.com/index/introducing-gpt-5-4-mini-and-nano/" },
-    ],
-  },
+// ---------------------------------------------------------------------------
+// Catalog — current, non-deprecated-first. Deprecated items kept but flagged
+// (they still work until shutdown and matter for our active stack).
+// ---------------------------------------------------------------------------
+
+const PRICING: Citation = { label: "Pricing", url: "https://developers.openai.com/api/docs/pricing" };
+const DEPRECATIONS: Citation = { label: "Deprecations", url: "https://developers.openai.com/api/docs/deprecations" };
+
+export const CATALOG: CatalogModel[] = [
+  // --- Text / vision ---
   {
     id: "gpt-5.4-nano",
-    tier: "nano · text",
-    role: "Collection-prompt composition (text only)",
-    pipelineSteps: "Step 2 (compose collection prompt)",
-    whatItDoes:
-      "The cheapest GPT-5.4 tier, built for simple high-volume tasks (extraction, classification, ranking). Here it turns the JSON manifest into a single natural-language image prompt. Vision-capable but used text-only. Released 2026-03-17.",
-    modalities: { textIn: true, textOut: true, visionIn: true, imageOut: false },
+    provider: "OpenAI",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
     contextWindow: 400_000,
     maxOutput: 128_000,
     knowledgeCutoff: "2025-08-31",
     tokenPricing: { inputPerM: 0.2, cachedInputPerM: 0.02, outputPerM: 1.25 },
-    verification: "Verified — exact ID in official docs.",
-    citations: [
-      { label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.4-nano" },
-      { label: "Pricing", url: "https://developers.openai.com/api/docs/pricing" },
-      { label: "Announcement", url: "https://openai.com/index/introducing-gpt-5-4-mini-and-nano/" },
-    ],
+    status: "current",
+    note: "Cheapest GPT-5.4 tier; built for simple high-volume tasks.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.4-nano" }, PRICING],
   },
   {
+    id: "gpt-5.4-mini",
+    provider: "OpenAI",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    contextWindow: 400_000,
+    maxOutput: 128_000,
+    knowledgeCutoff: "2025-08-31",
+    tokenPricing: { inputPerM: 0.75, cachedInputPerM: 0.075, outputPerM: 4.5 },
+    status: "current",
+    note: "Strong cost/capability balance for vision + JSON steps.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.4-mini" }, PRICING],
+  },
+  {
+    id: "gpt-5.4",
+    provider: "OpenAI",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    contextWindow: 1_050_000,
+    maxOutput: 128_000,
+    knowledgeCutoff: "2025-08-31",
+    tokenPricing: { inputPerM: 2.5, cachedInputPerM: 0.25, outputPerM: 15.0 },
+    status: "current",
+    note: "Frontier model; more headroom than mini at higher cost.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.4" }, PRICING],
+  },
+  {
+    id: "gpt-5.5",
+    provider: "OpenAI",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    contextWindow: 1_050_000,
+    maxOutput: 128_000,
+    knowledgeCutoff: "2025-12-01",
+    tokenPricing: { inputPerM: 5.0, cachedInputPerM: 0.5, outputPerM: 30.0 },
+    status: "current",
+    note: "Current flagship; highest quality, ~2× the cost of gpt-5.4.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.5" }, PRICING],
+  },
+  {
+    id: "gpt-4.1",
+    provider: "OpenAI",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    contextWindow: 1_047_576,
+    maxOutput: 32_768,
+    tokenPricing: { inputPerM: 2.0, cachedInputPerM: 0.5, outputPerM: 8.0 },
+    status: "current",
+    note: "Previous-gen non-reasoning model; viable fallback, superseded by 5.x.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-4.1" }, PRICING],
+  },
+  {
+    id: "gpt-5.4-pro",
+    provider: "OpenAI",
+    kind: "text",
+    capabilities: ["text", "vision"], // NOTE: no structuredOutput → cannot do steps 1/4
+    contextWindow: 1_050_000,
+    maxOutput: 128_000,
+    tokenPricing: { inputPerM: 30.0, outputPerM: 180.0 },
+    status: "current",
+    note: "Reasoning Pro tier. No structured outputs — only fits the text-only step. Slow/expensive.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-5.4-pro" }, PRICING],
+  },
+
+  // --- Image generation (images.edit) ---
+  {
     id: "gpt-image-1-mini",
-    tier: "image · text+image in → image out",
-    role: "Image generation (contact sheet + each icon)",
-    pipelineSteps: "Step 3 (contact sheet) · Step 5 (each icon), via images.edit",
-    whatItDoes:
-      "Cost-efficient GPT Image 1 — natively multimodal (text + image in, image out), ~80% cheaper than full gpt-image-1, strong at rendering text/UI elements. Called via images.edit (reference image + prompt → PNG). Released Oct 2025.",
-    modalities: { textIn: true, textOut: false, visionIn: true, imageOut: true },
-    knowledgeCutoff: undefined,
-    image: {
-      perImage1024: { low: 0.005, medium: 0.011, high: 0.036 },
-      sizes: ["1024×1024", "1024×1536", "1536×1024"],
-      imageOutputPerM: 8.0,
-      textInputPerM: 2.0,
-      imageInputCachedPerM: 0.25,
-      outputTokens1024: { low: 272, medium: 1056, high: 4160 },
-    },
-    verification:
-      "Verified — exact ID in official docs. Two capability claims are secondary-source only (see caveats): no input_fidelity on the mini variant, and transparent background may not apply on the edit endpoint.",
-    citations: [
-      { label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-image-1-mini" },
-      { label: "Image guide", url: "https://developers.openai.com/api/docs/guides/image-generation" },
-      { label: "Pricing", url: "https://developers.openai.com/api/docs/pricing" },
-    ],
+    provider: "OpenAI",
+    kind: "image",
+    capabilities: ["imageEdit", "transparentBg"],
+    imagePricing: { low: 0.005, medium: 0.011, high: 0.036 },
+    status: "deprecated",
+    deprecation: { since: "2026-06-02", shutdown: "2026-12-01" },
+    note: "App's current image model. Cheapest; transparency works on edit; no input_fidelity.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-image-1-mini" }, PRICING, DEPRECATIONS],
+  },
+  {
+    id: "gpt-image-1.5",
+    provider: "OpenAI",
+    kind: "image",
+    capabilities: ["imageEdit", "transparentBg"],
+    imagePricing: { low: 0.009, medium: 0.034, high: 0.133 },
+    status: "deprecated",
+    deprecation: { since: "2026-06-02", shutdown: "2026-12-01" },
+    note: "Closest match to current behavior (transparency + input_fidelity). Now deprecated.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-image-1.5" }, PRICING, DEPRECATIONS],
+  },
+  {
+    id: "gpt-image-1",
+    provider: "OpenAI",
+    kind: "image",
+    capabilities: ["imageEdit", "transparentBg"],
+    imagePricing: { low: 0.011, medium: 0.042, high: 0.167 },
+    status: "deprecated",
+    deprecation: { since: "2026-06-02", shutdown: "2026-12-01" },
+    note: "Original GPT Image; priciest of the 1.x line. Transparency + input_fidelity.",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-image-1" }, PRICING, DEPRECATIONS],
+  },
+  {
+    id: "gpt-image-2",
+    provider: "OpenAI",
+    kind: "image",
+    capabilities: ["imageEdit"], // NOTE: no transparentBg
+    imagePricing: { low: 0.006, medium: 0.053, high: 0.211 },
+    status: "current",
+    note: "Only non-deprecated image model — but does NOT support transparent backgrounds (breaks transparent icons).",
+    citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-image-2" }, PRICING],
   },
 ];
 
-// Representative cost for one run with ~15 icons. Image costs are exact per
-// OpenAI's per-image table; text/vision token counts are ESTIMATES (stated).
-export type RunLine = {
-  step: string;
-  model: string;
+export function getModel(id: string): CatalogModel | undefined {
+  return CATALOG.find((m) => m.id === id);
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline steps — the vertical stack. Step 0 (upload) is free / no model.
+// ---------------------------------------------------------------------------
+
+export type StepKey =
+  | "analyze"
+  | "collectionPrompt"
+  | "collectionImage"
+  | "individualPrompts"
+  | "generateIcons";
+
+export type PipelineStep = {
+  num: number;
+  key: StepKey;
+  name: string;
+  description: string;
+  kind: "text" | "image";
+  requires: Capability[]; // hard — filters compatible models
+  prefers?: Capability[]; // soft — warn if the chosen model lacks it
+  defaultModelId: string;
+  // cost-estimate inputs
+  textEstimate?: { inputTokens: number; outputTokens: number };
+  image?: { defaultQuality: "low" | "medium" | "high"; perRun: "one" | "perIcon" };
+};
+
+export const STEPS: PipelineStep[] = [
+  {
+    num: 1,
+    key: "analyze",
+    name: "Analyze image → manifest",
+    description:
+      "A vision model reads the uploaded screenshot and returns a structured JSON inventory of every icon plus the shared family style.",
+    kind: "text",
+    requires: ["text", "vision", "structuredOutput"],
+    defaultModelId: MODEL_ROLES.visionAnalyzerModel,
+    textEstimate: { inputTokens: 1500, outputTokens: 800 },
+  },
+  {
+    num: 2,
+    key: "collectionPrompt",
+    name: "Compose collection prompt",
+    description:
+      "A text model turns the JSON manifest into one natural-language prompt that describes the whole icon family as a single image.",
+    kind: "text",
+    requires: ["text"],
+    defaultModelId: MODEL_ROLES.collectionPromptModel,
+    textEstimate: { inputTokens: 1000, outputTokens: 600 },
+  },
+  {
+    num: 3,
+    key: "collectionImage",
+    name: "Generate collection image",
+    description:
+      "An image model renders the whole family together (the collection image) from the source image + manifest + prompt. This image is the visual style anchor for every icon.",
+    kind: "image",
+    requires: ["imageEdit"],
+    defaultModelId: MODEL_ROLES.collectionImageModel,
+    image: { defaultQuality: "high", perRun: "one" },
+  },
+  {
+    num: 4,
+    key: "individualPrompts",
+    name: "Compose per-icon prompts",
+    description:
+      "A vision model reads the collection image + manifest and writes one tightly-scoped generation prompt per icon, grounded in the rendered style.",
+    kind: "text",
+    requires: ["text", "vision", "structuredOutput"],
+    defaultModelId: MODEL_ROLES.individualPromptModel,
+    textEstimate: { inputTokens: 1500, outputTokens: 2000 },
+  },
+  {
+    num: 5,
+    key: "generateIcons",
+    name: "Generate each icon",
+    description:
+      "An image model renders each icon as a standalone asset, using the collection image as the reference so the family stays consistent. Repeats once per icon.",
+    kind: "image",
+    requires: ["imageEdit"],
+    prefers: ["transparentBg"],
+    defaultModelId: MODEL_ROLES.imageGeneratorModel,
+    image: { defaultQuality: "medium", perRun: "perIcon" },
+  },
+];
+
+export function compatibleModels(step: PipelineStep): CatalogModel[] {
+  return CATALOG.filter(
+    (m) => m.kind === step.kind && step.requires.every((c) => m.capabilities.includes(c)),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stack = a chosen model (+ quality) per step. The active stack is derived from
+// the app's real config (MODEL_ROLES) so "what we rely on" is always accurate.
+// ---------------------------------------------------------------------------
+
+export type ImageQuality = "low" | "medium" | "high";
+
+export type Stack = {
+  name: string;
+  models: Record<StepKey, string>;
+  quality: { collectionImage: ImageQuality; generateIcons: ImageQuality };
+  iconCount: number;
+};
+
+export const DEFAULT_STACK: Stack = {
+  name: "Active stack (current config)",
+  models: {
+    analyze: MODEL_ROLES.visionAnalyzerModel,
+    collectionPrompt: MODEL_ROLES.collectionPromptModel,
+    collectionImage: MODEL_ROLES.collectionImageModel,
+    individualPrompts: MODEL_ROLES.individualPromptModel,
+    generateIcons: MODEL_ROLES.imageGeneratorModel,
+  },
+  quality: { collectionImage: "high", generateIcons: "medium" },
+  iconCount: 15,
+};
+
+// ---------------------------------------------------------------------------
+// Cost model
+// ---------------------------------------------------------------------------
+
+export type StepCost = {
+  step: PipelineStep;
+  modelId: string;
   detail: string;
   cost: number;
-  exact: boolean;
+  exact: boolean; // image costs are exact; text costs use token estimates
+  warning?: string; // e.g. chosen model lacks a preferred capability
 };
 
-export const RUN_ESTIMATE: { iconCount: number; lines: RunLine[] } = {
-  iconCount: 15,
-  lines: [
-    { step: "Analyze image → manifest", model: "gpt-5.4-mini", detail: "~1.5k in + 0.8k out (est.)", cost: 0.0047, exact: false },
-    { step: "Compose collection prompt", model: "gpt-5.4-nano", detail: "~1k in + 0.6k out (est.)", cost: 0.0008, exact: false },
-    { step: "Contact sheet image", model: "gpt-image-1-mini", detail: "1× 1024², HIGH", cost: 0.036, exact: true },
-    { step: "Compose individual prompts", model: "gpt-5.4-mini", detail: "~1k in + 0.6k out (est.)", cost: 0.0035, exact: false },
-    { step: "Generate icons", model: "gpt-image-1-mini", detail: "15× 1024², MEDIUM", cost: 0.165, exact: true },
-  ],
-};
+export function costForStep(step: PipelineStep, stack: Stack): StepCost {
+  const modelId = stack.models[step.key];
+  const model = getModel(modelId);
+  const base: Omit<StepCost, "cost" | "detail" | "exact"> = { step, modelId };
 
-export const RUN_ESTIMATE_TOTAL = RUN_ESTIMATE.lines.reduce((s, l) => s + l.cost, 0);
+  if (!model) {
+    return { ...base, cost: 0, detail: "unknown model", exact: false, warning: "Model not in catalog." };
+  }
 
-// Honest caveats surfaced from the research.
-export const CAVEATS: { title: string; body: string; source?: Citation }[] = [
+  // Soft-requirement warning (e.g. transparent background on the icon step).
+  let warning: string | undefined;
+  if (step.prefers) {
+    const missing = step.prefers.filter((c) => !model.capabilities.includes(c));
+    if (missing.length) {
+      warning = `Lacks ${missing.map((c) => CAPABILITY_LABEL[c]).join(", ")} — needed for this step's intended output.`;
+    }
+  }
+  if (model.status === "deprecated" && model.deprecation) {
+    const dep = `Deprecated ${model.deprecation.since}; shuts down ${model.deprecation.shutdown}.`;
+    warning = warning ? `${warning} ${dep}` : dep;
+  }
+
+  if (step.kind === "text" && model.tokenPricing && step.textEstimate) {
+    const { inputTokens, outputTokens } = step.textEstimate;
+    const cost =
+      (inputTokens * model.tokenPricing.inputPerM + outputTokens * model.tokenPricing.outputPerM) /
+      1_000_000;
+    return {
+      ...base,
+      cost,
+      detail: `~${inputTokens.toLocaleString()} in + ${outputTokens.toLocaleString()} out (est.)`,
+      exact: false,
+      warning,
+    };
+  }
+
+  if (step.kind === "image" && model.imagePricing && step.image) {
+    const quality = step.key === "collectionImage" ? stack.quality.collectionImage : stack.quality.generateIcons;
+    const count = step.image.perRun === "perIcon" ? stack.iconCount : 1;
+    const per = model.imagePricing[quality];
+    return {
+      ...base,
+      cost: per * count,
+      detail: `${count}× 1024² ${quality.toUpperCase()} @ ${usdShort(per)}`,
+      exact: true,
+      warning,
+    };
+  }
+
+  return { ...base, cost: 0, detail: "no pricing for this model/step", exact: false, warning };
+}
+
+export function costForStack(stack: Stack): { lines: StepCost[]; total: number } {
+  const lines = STEPS.map((s) => costForStep(s, stack));
+  return { lines, total: lines.reduce((sum, l) => sum + l.cost, 0) };
+}
+
+function usdShort(n: number): string {
+  return n >= 0.01 ? `$${n.toFixed(3)}` : `$${n.toFixed(4)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Sources (top-of-page) + caveats
+// ---------------------------------------------------------------------------
+
+export const SOURCES: Citation[] = [
+  { label: "OpenAI Pricing", url: "https://developers.openai.com/api/docs/pricing" },
+  { label: "Models index", url: "https://developers.openai.com/api/docs/models" },
+  { label: "Image generation guide", url: "https://developers.openai.com/api/docs/guides/image-generation" },
+  { label: "images.edit reference", url: "https://developers.openai.com/api/reference/python/resources/images/methods/edit" },
+  { label: "Deprecations", url: "https://developers.openai.com/api/docs/deprecations" },
+  { label: "GPT-5.4 mini/nano announcement", url: "https://openai.com/index/introducing-gpt-5-4-mini-and-nano/" },
+];
+
+export const CAVEATS: { title: string; body: string; severity: "warn" | "info"; source?: Citation }[] = [
   {
-    title: "Image generation dominates cost",
-    body: "In the example run, image steps are ~$0.20 of ~$0.21; all the text/vision calls together are under $0.01. Each extra MEDIUM icon adds ≈ $0.011; one HIGH contact sheet ($0.036) costs about as much as ~3.3 MEDIUM icons.",
+    title: "Our image model is deprecated (shutdown 2026-12-01)",
+    severity: "warn",
+    body: "gpt-image-1-mini — used for steps 3 & 5 — was deprecated 2026-06-02 along with the whole gpt-image-1.x family. It still works until 2026-12-01, but we need a migration path before then.",
+    source: DEPRECATIONS,
   },
   {
-    title: "Reference images add a little input cost",
-    body: "Every images.edit call also passes a reference image (the source image, then the contact sheet). That bills image-input tokens on top of the per-image output price — cached rate $0.25/1M ≈ $0.00025/image (negligible), but up to the $2.00/1M uncached rate.",
+    title: "The only current image model can't do transparent icons",
+    severity: "warn",
+    body: "gpt-image-2 is the sole non-deprecated image model, but it does not support transparent backgrounds at all. Moving step 5 to it would break transparent icons unless we add post-processing. (Transparency itself does work on the images.edit endpoint for the gpt-image-1.x family — that part is fine today.)",
+    source: { label: "Image guide", url: "https://developers.openai.com/api/docs/guides/image-generation" },
   },
   {
-    title: "Transparent background on images.edit — UNVERIFIED",
-    body: "Our generate-icon step passes background:\"transparent\" to images.edit. Research (secondary sources) indicates transparency is a generate-endpoint feature and may not apply on edit for the gpt-image-1 family. Needs a live API test; transparency may be silently ignored.",
-    source: { label: "OpenAI community thread", url: "https://community.openai.com/t/gpt-image-1-transparent-backgrounds-with-edit-request/1240577" },
+    title: "gpt-5.4-pro can't do the JSON steps",
+    severity: "info",
+    body: "gpt-5.4-pro has vision but no structured-output support, so it only qualifies for the text-only step (2). gpt-5.5-pro does support structured outputs but is slow/expensive.",
   },
   {
-    title: "gpt-image-1-mini image-input rate discrepancy",
-    body: "The pricing table lists image-input at $0.25/1M (cached) while one model-page fetch showed $2.50/1M. Treat $2.00 uncached / $0.25 cached as authoritative but re-confirm against the live table if exact image-input cost matters.",
+    title: "Image generation dominates cost; text is rounding error",
+    severity: "info",
+    body: "On the default stack, the image steps are ~95% of the spend. Each extra medium icon ≈ $0.011; one HIGH collection image ≈ 3 medium icons. Text/vision token counts here are estimates — the image per-image prices are exact from OpenAI's table.",
   },
 ];

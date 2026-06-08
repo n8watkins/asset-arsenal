@@ -3,14 +3,14 @@
 //
 // Steps 1 and 4 are vision calls (they read an image). Step 2 is text-only.
 // Steps 3 and 5 are image generation via images.edit (they pass a reference
-// image — the source image for the contact sheet, the contact sheet for icons).
+// image — the source image for the collection image, the collection image for icons).
 
 export const MODEL_ROLES = {
   visionAnalyzerModel: "gpt-5.4-mini", // step 1: source image -> manifest JSON
   collectionPromptModel: "gpt-5.4-nano", // step 2: manifest -> collection prompt text
-  collectionImageModel: "gpt-image-1-mini", // step 3: source + prompt -> contact sheet
-  individualPromptModel: "gpt-5.4-mini", // step 4: contact sheet (vision) + manifest -> prompts JSON
-  imageGeneratorModel: "gpt-image-1-mini", // step 5: contact sheet + prompt -> single icon
+  collectionImageModel: "gpt-image-1-mini", // step 3: source + prompt -> collection image
+  individualPromptModel: "gpt-5.4-mini", // step 4: collection image (vision) + manifest -> prompts JSON
+  imageGeneratorModel: "gpt-image-1-mini", // step 5: collection image + prompt -> single icon
 } as const;
 
 export const COST_GUARDRAILS = {

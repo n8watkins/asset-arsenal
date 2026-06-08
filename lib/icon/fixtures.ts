@@ -47,7 +47,7 @@ export const SAMPLE_MANIFEST: IconManifest = {
 };
 
 export const SAMPLE_COLLECTION_PROMPT =
-  "Create a polished icon collection contact sheet showing a unified family of premium dark-mode SaaS/developer-dashboard icons on a dark navy background. Render thin-to-medium monoline outline glyphs with rounded caps and joins, cyan and violet neon accents, subtle glow. Arrange a cyan outlined hexagon, a circular clock, and angled code brackets in a clean evenly-spaced grid. No text, no labels, no UI clutter, consistent stroke weight and glow across all icons.";
+  "Create a polished icon collection collection image showing a unified family of premium dark-mode SaaS/developer-dashboard icons on a dark navy background. Render thin-to-medium monoline outline glyphs with rounded caps and joins, cyan and violet neon accents, subtle glow. Arrange a cyan outlined hexagon, a circular clock, and angled code brackets in a clean evenly-spaced grid. No text, no labels, no UI clutter, consistent stroke weight and glow across all icons.";
 
 export const SAMPLE_INDIVIDUAL_PROMPTS: IndividualIconPrompts = {
   sharedStylePrompt:
@@ -56,7 +56,7 @@ export const SAMPLE_INDIVIDUAL_PROMPTS: IndividualIconPrompts = {
     iconId: icon.id,
     iconName: icon.name,
     concept: icon.concept,
-    contactSheetReference: `row 1, column ${i + 1}`,
+    collectionImageReference: `row 1, column ${i + 1}`,
     prompt: `Create one standalone ${icon.name.toLowerCase()} icon in 1:1 square format representing ${icon.concept}. ${icon.visualDescription}. Centered with generous padding, thin-to-medium monoline strokes, subtle neon glow, dark navy or transparent-friendly background. Generate one icon only; no text, no numbers, no extra decoration.`,
   })),
 };

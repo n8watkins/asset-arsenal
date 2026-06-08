@@ -1,7 +1,7 @@
 # Asset Arsenal
 
 An OpenAI-powered **icon extraction workbench**. Upload a source image → a
-6-step AI pipeline detects the icons, builds a style-anchoring contact sheet,
+6-step AI pipeline detects the icons, builds a style-anchoring collection image,
 then regenerates each icon as a clean, transparent standalone asset.
 
 ```
@@ -11,14 +11,14 @@ iconManifest
   → /api/icons/compose-collection-prompt   [gpt-5.4-nano, text]
 collectionPrompt
   → /api/icons/generate-collection-image   [gpt-image-1-mini, images.edit, source as reference]
-collectionImage  ← "contact sheet" (the visual style anchor)
-  → /api/icons/compose-individual-prompts  [gpt-5.4-mini, vision, contact sheet as input]
+collectionImage  ← the visual style anchor
+  → /api/icons/compose-individual-prompts  [gpt-5.4-mini, vision, collection image as input]
 individualPrompts { sharedStylePrompt, iconPrompts[] }
-  → /api/icons/generate-one | generate-batch  [gpt-image-1-mini, images.edit, contact sheet as reference]
+  → /api/icons/generate-one | generate-batch  [gpt-image-1-mini, images.edit, collection image as reference]
 generatedIcons[]
 ```
 
-The contact sheet is the visual style anchor for the whole run — steps 4 and 5
+The collection image is the visual style anchor for the whole run — steps 4 and 5
 pass it back to the model as a reference image via `images.edit` (not
 `images.generate`, which has no reference-image input).
 
@@ -69,9 +69,9 @@ change it **there** (one place):
 ```ts
 visionAnalyzerModel:   "gpt-5.4-mini"     // step 1: source image       -> manifest JSON
 collectionPromptModel: "gpt-5.4-nano"     // step 2: manifest           -> collection prompt text
-collectionImageModel:  "gpt-image-1-mini" // step 3: source + prompt    -> contact sheet
-individualPromptModel: "gpt-5.4-mini"     // step 4: contact sheet      -> individual prompts JSON
-imageGeneratorModel:   "gpt-image-1-mini" // step 5: contact sheet + prompt -> single icon
+collectionImageModel:  "gpt-image-1-mini" // step 3: source + prompt    -> collection image
+individualPromptModel: "gpt-5.4-mini"     // step 4: collection image      -> individual prompts JSON
+imageGeneratorModel:   "gpt-image-1-mini" // step 5: collection image + prompt -> single icon
 ```
 
 ## Guardrails

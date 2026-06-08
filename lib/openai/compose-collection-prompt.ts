@@ -5,7 +5,7 @@ import { MODEL_ROLES } from "@/lib/icon/models";
 import { getClient } from "./client";
 
 /**
- * Step 2 — icon manifest -> a single icon collection (contact sheet) prompt.
+ * Step 2 — icon manifest -> a single icon collection image prompt.
  *
  * This is a text-only call. The composer is instructed to return only the
  * final image-generation prompt text (no JSON), so we read output_text.

@@ -435,7 +435,7 @@ function Section2({
 }
 
 // ---------------------------------------------------------------------------
-// §3 — Generate collection image (contact sheet)
+// §3 — Generate collection image
 // ---------------------------------------------------------------------------
 
 function Section3({
@@ -503,7 +503,7 @@ function Section3({
       title="Generate collection image"
       num={3}
       inputs="source image + manifest + collection prompt"
-      output="contact sheet image"
+      output="collection image image"
       model={MODEL_ROLES.collectionImageModel}
     >
       <PromptDisclosure
@@ -554,7 +554,7 @@ function Section3({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={result}
-            alt="contact sheet"
+            alt="collection image"
             className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-950"
           />
         )}
@@ -626,7 +626,7 @@ function Section4({
     <SectionCard
       title="Compose individual prompts"
       num={4}
-      inputs="contact sheet + manifest"
+      inputs="collection image + manifest"
       output="sharedStylePrompt + one prompt per icon"
       model={MODEL_ROLES.individualPromptModel}
     >
@@ -635,7 +635,7 @@ function Section4({
         prompt={buildIndividualPromptComposer(manifestText)}
       />
       <p className="text-zinc-500 text-sm italic">
-        + the contact sheet (§3) is sent as image input alongside this prompt
+        + the collection image (§3) is sent as image input alongside this prompt
       </p>
       <button
         onClick={pull}
@@ -645,7 +645,7 @@ function Section4({
         ↑ pull manifest from §1
       </button>
       <ImageInput
-        label="Contact sheet (style reference):"
+        label="Collection image (style reference):"
         value={state.collectionImageDataUrl}
         onChange={(dataUrl) => patch({ collectionImageDataUrl: dataUrl })}
       />
@@ -661,7 +661,7 @@ function Section4({
         disabled={!!parseError || !state.collectionImageDataUrl}
       />
       {!state.collectionImageDataUrl && (
-        <p className="text-zinc-500 text-sm">Generate or provide a contact sheet first (§3).</p>
+        <p className="text-zinc-500 text-sm">Generate or provide a collection image first (§3).</p>
       )}
       <OutputPanel empty={!error && !result}>
         {error && <ErrorMsg msg={error} />}
@@ -725,7 +725,7 @@ function Section5({ state }: { state: BenchState }) {
     <SectionCard
       title="Generate one icon"
       num={5}
-      inputs="contact sheet + sharedStylePrompt + one icon prompt"
+      inputs="collection image + sharedStylePrompt + one icon prompt"
       output="single icon image"
       model={MODEL_ROLES.imageGeneratorModel}
     >
@@ -734,7 +734,7 @@ function Section5({ state }: { state: BenchState }) {
         prompt={resolvedWrapper}
       />
       <p className="text-zinc-500 text-sm italic">
-        + the contact sheet (§3) is attached as the style reference
+        + the collection image (§3) is attached as the style reference
       </p>
       <div className="flex flex-col gap-2">
         <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
@@ -776,7 +776,7 @@ function Section5({ state }: { state: BenchState }) {
       </div>
       <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
       {!state.collectionImageDataUrl && (
-        <p className="text-zinc-500 text-sm">A contact sheet (§3) is required as the reference.</p>
+        <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
       <OutputPanel empty={!error && !result}>
         {error && <ErrorMsg msg={error} />}
@@ -832,19 +832,19 @@ function Section6({ state }: { state: BenchState }) {
     <SectionCard
       title="Generate batch"
       num={6}
-      inputs="contact sheet + all icon prompts"
+      inputs="collection image + all icon prompts"
       output="all generated icons"
       model={MODEL_ROLES.imageGeneratorModel}
     >
       <p className="text-zinc-400 text-sm">
         Generates every icon in{" "}
         {state.individualPrompts ? "§4's output" : "the sample prompt set"} (
-        {prompts.iconPrompts.length} icons), each using the contact sheet as the
+        {prompts.iconPrompts.length} icons), each using the collection image as the
         reference.
       </p>
       <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
       {!state.collectionImageDataUrl && (
-        <p className="text-zinc-500 text-sm">A contact sheet (§3) is required as the reference.</p>
+        <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
       <OutputPanel empty={!error && !result}>
         {error && <ErrorMsg msg={error} />}
@@ -927,7 +927,7 @@ export default function BenchPage() {
               <FlowBadge ok={!!state.sourceDataUrl} label="source" />
               <FlowBadge ok={!!state.manifest} label="manifest" />
               <FlowBadge ok={!!state.collectionPrompt} label="collection prompt" />
-              <FlowBadge ok={!!state.collectionImageDataUrl} label="contact sheet" />
+              <FlowBadge ok={!!state.collectionImageDataUrl} label="collection image" />
               <FlowBadge ok={!!state.individualPrompts} label="icon prompts" />
             </div>
           </div>
