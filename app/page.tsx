@@ -7,14 +7,23 @@ import ManifestReviewCard from "@/components/icon-pipeline/ManifestReviewCard";
 import PromptReviewCard from "@/components/icon-pipeline/PromptReviewCard";
 import IconGrid from "@/components/icon-pipeline/IconGrid";
 import DebugDrawer from "@/components/icon-pipeline/DebugDrawer";
+import GalleryPanel from "@/components/gallery/GalleryPanel";
+import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import { useIconPipeline } from "@/lib/icon/use-icon-pipeline";
 import { analyzeImage, fetchPrompts, generateOneIcon } from "@/lib/icon/client-api";
+import { ICON_ANALYSIS_PROMPT } from "@/lib/icon/prompts";
 import {
   readImageFile,
   downloadDataUrl,
   copyText,
   slugify,
 } from "@/lib/icon/download";
+import {
+  saveSource,
+  saveRun,
+  saveIcon,
+  getSourceAsDataUrl,
+} from "@/lib/storage/repo";
 import type { GeneratedIcon, SourceImage } from "@/types/icon-pipeline";
 
 // Run up to `limit` async tasks at a time.
@@ -27,6 +36,16 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
     }
   });
   await Promise.all(workers);
+}
+
+// Persistence is best-effort: a storage failure (private mode, quota) must
+// never break the generation flow.
+async function persist(label: string, fn: () => Promise<void>) {
+  try {
+    await fn();
+  } catch (e) {
+    console.warn(`[persist] ${label} failed:`, e);
+  }
 }
 
 export default function Home() {
@@ -50,8 +69,31 @@ export default function Home() {
           uploadedAt: new Date().toISOString(),
         };
         p.uploadImage(source);
+        persist("saveSource", () => saveSource(source));
       } catch (e) {
         p.setError("upload", e instanceof Error ? e.message : "Upload failed.");
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [p],
+  );
+
+  // Re-run an existing library source (dropped onto upload, or "Use" button).
+  const handleUseSource = useCallback(
+    async (sourceId: string) => {
+      setIsUploading(true);
+      try {
+        const dataUrl = await getSourceAsDataUrl(sourceId);
+        if (!dataUrl) throw new Error("That source is no longer in the library.");
+        const source: SourceImage = {
+          id: sourceId, // reuse stored id so we don't duplicate the blob
+          imageUrl: dataUrl,
+          uploadedAt: new Date().toISOString(),
+        };
+        p.uploadImage(source);
+      } catch (e) {
+        p.setError("upload", e instanceof Error ? e.message : "Could not load source.");
       } finally {
         setIsUploading(false);
       }
@@ -111,12 +153,22 @@ export default function Home() {
             prompt,
             iconFamilyStyle: manifest.iconFamilyStyle,
           });
-          p.updateGeneratedIcon(slot.id, {
+          const settled: GeneratedIcon = {
+            ...slot,
             status: generatedIcon.status,
             imageUrl: generatedIcon.imageUrl,
             error: generatedIcon.error,
             modelUsed: generatedIcon.modelUsed,
+          };
+          p.updateGeneratedIcon(slot.id, {
+            status: settled.status,
+            imageUrl: settled.imageUrl,
+            error: settled.error,
+            modelUsed: settled.modelUsed,
           });
+          if (settled.status === "success" && settled.imageUrl) {
+            persist("saveIcon", () => saveIcon(settled, run.id));
+          }
         } catch (e) {
           p.updateGeneratedIcon(slot.id, {
             status: "failed",
@@ -125,12 +177,23 @@ export default function Home() {
         }
       });
     },
-    [p, run.manifest, run.promptPack],
+    [p, run.manifest, run.promptPack, run.id],
   );
 
   const handleGenerate = useCallback(async () => {
-    if (!run.promptPack) return;
+    if (!run.promptPack || !run.manifest || !run.sourceImage) return;
     p.approvePrompts(); // → generating_icons
+    // Persist the run shell so icons have a parent in the library.
+    persist("saveRun", () =>
+      saveRun({
+        id: run.id,
+        sourceId: run.sourceImage.id,
+        createdAt: run.createdAt,
+        manifest: run.manifest,
+        promptPack: run.promptPack,
+        iconCount: run.manifest!.iconCount,
+      }),
+    );
     const slots: GeneratedIcon[] = run.promptPack.prompts.map((pr) => ({
       id: crypto.randomUUID(),
       iconId: pr.iconId,
@@ -144,7 +207,7 @@ export default function Home() {
     p.initGeneratedIcons(slots);
     await generateIconsFor(slots);
     p.finishGeneration();
-  }, [p, run.promptPack, generateIconsFor]);
+  }, [p, run.promptPack, run.manifest, run.sourceImage, run.id, run.createdAt, generateIconsFor]);
 
   const handleRegenerate = useCallback(
     async (generatedIconId: string) => {
@@ -177,6 +240,7 @@ export default function Home() {
 
   // ---- Render: accumulating chat-style flow ----
   const latestError = run.errors[run.errors.length - 1];
+  const hasSource = !!run.sourceImage?.imageUrl;
   const showManifest = !!run.manifest;
   const showPrompts = !!run.promptPack;
   const showGrid = run.generatedIcons.length > 0;
@@ -192,8 +256,16 @@ export default function Home() {
             isUploading={isUploading}
             onFileSelected={handleFileSelected}
             onExtract={handleExtract}
+            onSourceDrop={handleUseSource}
             disabled={currentStep === "analyzing_icons"}
           />
+
+          {hasSource && !showManifest && (
+            <PromptDisclosure
+              label="View analysis prompt that will be sent"
+              prompt={`${ICON_ANALYSIS_PROMPT}\n\n[+ the uploaded image is sent as image input]`}
+            />
+          )}
 
           {currentStep === "analyzing_icons" && (
             <StatusLine text="Analyzing the image for icon candidates…" />
@@ -217,6 +289,7 @@ export default function Home() {
           {showPrompts && (
             <PromptReviewCard
               promptPack={run.promptPack!}
+              iconFamilyStyle={run.manifest?.iconFamilyStyle}
               onEditPrompt={p.editPrompt}
               onApprove={() => {}}
               onGenerate={handleGenerate}
@@ -254,6 +327,7 @@ export default function Home() {
         </div>
       </main>
 
+      <GalleryPanel onUseSource={handleUseSource} />
       <DebugDrawer run={run} />
     </div>
   );

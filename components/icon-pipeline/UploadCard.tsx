@@ -6,6 +6,7 @@ import {
   IMAGE_UPLOAD_LIMITS,
   MAX_FILE_SIZE_BYTES,
 } from "@/lib/icon/models";
+import { getDraggedSourceId } from "@/components/gallery/drag";
 
 export interface UploadCardProps {
   sourceImage: SourceImage | null;
@@ -13,6 +14,8 @@ export interface UploadCardProps {
   onFileSelected: (file: File) => void;
   onExtract: () => void;
   disabled?: boolean;
+  /** Re-run an existing library source dropped from the gallery. */
+  onSourceDrop?: (sourceId: string) => void;
 }
 
 function validateFile(file: File): string | null {
@@ -36,6 +39,7 @@ export default function UploadCard({
   onFileSelected,
   onExtract,
   disabled = false,
+  onSourceDrop,
 }: UploadCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -64,6 +68,12 @@ export default function UploadCard({
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
+    // Re-run from the gallery: a stored source was dragged in.
+    const droppedSourceId = getDraggedSourceId(e);
+    if (droppedSourceId && onSourceDrop) {
+      onSourceDrop(droppedSourceId);
+      return;
+    }
     const file = e.dataTransfer.files?.[0];
     if (file) handleFile(file);
   };
