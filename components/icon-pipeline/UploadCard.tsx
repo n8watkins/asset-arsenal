@@ -97,7 +97,7 @@ export default function UploadCard({
           .filter(Boolean)
           .join(" ")}
       >
-        {sourceImage ? (
+        {sourceImage && sourceImage.imageUrl ? (
           <>
             {/* Preview */}
             <img
