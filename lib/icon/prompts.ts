@@ -110,7 +110,7 @@ export function buildIndividualPromptComposer(manifestJson: string): string {
 
 You will receive:
 1. the original icon manifest JSON
-2. a collection image image showing the approved icon family style
+2. a collection image showing the approved icon family style
 
 Your task:
 Create one image-generation prompt for each icon in the manifest.
@@ -118,19 +118,14 @@ Create one image-generation prompt for each icon in the manifest.
 Each prompt should generate a single standalone icon that matches the collection image style.
 
 Global style to preserve:
-- premium dark-mode SaaS/developer-dashboard icon family
-- thin-to-medium monoline outline glyphs
-- rounded caps and rounded joins
-- simple geometric silhouettes
-- subtle neon glow and soft bloom
-- dark navy or transparent-friendly presentation
-- refined Lucide/Heroicons-inspired clarity
-- consistent stroke weight, padding, scale, and glow intensity
+- Derive the shared visual style entirely from the approved collection image and the manifest's style fields (color palette, line style, shape language, glow style, background rule, and any negative rules).
+- Do not impose any predetermined aesthetic, theme, color scheme, or mood — match whatever style the collection image and manifest actually define, whether that is light or dark, flat or detailed, mono or multicolor.
+- Keep every icon mutually consistent in stroke weight, padding, scale, silhouette treatment, and overall finish.
 
 Important:
-- Use the collection image image as the visual style reference.
+- Use the collection image as the visual style reference.
 - Use the manifest as the source of truth for icon names, concepts, and meanings.
-- Preserve the shared icon family style.
+- Preserve the shared icon family style exactly as it appears in the collection image.
 
 Each individual prompt must:
 - generate one icon only
@@ -165,7 +160,7 @@ export function buildIconGenerationWrapper(args: {
 }): string {
   return `Create exactly one isolated reusable icon asset.
 
-Use the attached icon collection image as the visual style reference. Match the same icon family style, stroke weight, glow intensity, proportions, padding, and dark-mode presentation.
+Use the attached icon collection image as the visual style reference. Match the same icon family style, stroke weight, proportions, padding, and overall presentation exactly as shown in the collection image.
 
 Shared icon family style:
 ${args.sharedStylePrompt}
@@ -193,7 +188,7 @@ Output requirements:
 - no button UI
 - no extra objects
 - no decorative clutter
-- transparent background if supported; otherwise use a simple dark navy background
-- preserve the premium dark-mode SaaS/developer-dashboard icon family style
-- make the icon reusable as a standalone dashboard asset`;
+- transparent background if supported; otherwise a clean, neutral background consistent with the collection image
+- preserve the icon family style defined by the attached collection image and the shared style prompt — do not impose any other aesthetic
+- make the icon reusable as a standalone asset`;
 }
