@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
@@ -461,19 +462,19 @@ export default function BenchPage() {
       <div className="max-w-4xl mx-auto flex flex-col gap-8">
         {/* Title */}
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-zinc-100">
+          <Link
+            href="/"
+            className="self-start font-mono text-xs text-cyan-400/80 hover:text-cyan-300"
+          >
+            ← back to app
+          </Link>
+          <h1 className="mt-1 text-2xl font-bold text-zinc-100">
             Test Bench
           </h1>
           <p className="text-zinc-500 text-sm">
             Developer endpoint tester for the Asset Arsenal icon pipeline.
             Each section shows the <span className="text-cyan-400">exact resolved prompt</span> before you run.
           </p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="w-2 h-2 rounded-full bg-zinc-600 inline-block" />
-            <span className="text-zinc-600 text-xs font-mono">
-              /bench — not linked from the main UI
-            </span>
-          </div>
         </div>
 
         <Section1 />

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { PipelineStep } from "@/types/icon-pipeline";
 import { MODEL_ROLES } from "@/lib/icon/models";
 
@@ -79,14 +80,22 @@ export default function Header({ currentStep, onReset }: HeaderProps) {
         </span>
       </div>
 
-      {/* Right: reset button */}
-      <button
-        type="button"
-        onClick={onReset}
-        className="shrink-0 rounded px-3 py-1.5 font-mono text-xs font-medium text-zinc-400 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-800 hover:text-zinc-100 hover:ring-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-      >
-        reset
-      </button>
+      {/* Right: bench link + reset button */}
+      <div className="flex shrink-0 items-center gap-2">
+        <Link
+          href="/bench"
+          className="rounded px-3 py-1.5 font-mono text-xs font-medium text-cyan-400/80 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-800 hover:text-cyan-300 hover:ring-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          bench ↗
+        </Link>
+        <button
+          type="button"
+          onClick={onReset}
+          className="rounded px-3 py-1.5 font-mono text-xs font-medium text-zinc-400 ring-1 ring-zinc-700 transition-colors hover:bg-zinc-800 hover:text-zinc-100 hover:ring-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          reset
+        </button>
+      </div>
     </header>
   );
 }
