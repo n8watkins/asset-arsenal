@@ -31,6 +31,8 @@ import type {
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import GalleryPicker from "@/components/gallery/GalleryPicker";
 import Nav from "@/components/Nav";
+import PipelineOutline from "@/components/bench/PipelineOutline";
+import { OutputTabs, InterpretedResult } from "@/components/bench/interpreted";
 import {
   type Stack,
   DEFAULT_STACK,
@@ -57,58 +59,11 @@ type BenchState = {
 // Shared UI primitives
 // ---------------------------------------------------------------------------
 
-function RawJson({ data }: { data: unknown }) {
-  return (
-    <pre className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 text-sm text-zinc-300 font-mono overflow-auto max-h-96 whitespace-pre-wrap break-words">
-      {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
-    </pre>
-  );
-}
-
 function ErrorMsg({ msg }: { msg: string }) {
   return (
     <p className="text-red-400 text-sm font-mono bg-red-950/30 border border-red-800/40 rounded-lg px-4 py-3">
       {msg}
     </p>
-  );
-}
-
-function FlowBadge({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span
-      className={`rounded-md px-2.5 py-1 font-mono text-xs ${
-        ok
-          ? "bg-emerald-900/40 text-emerald-300 border border-emerald-700/40"
-          : "bg-zinc-800 text-zinc-500 border border-zinc-700"
-      }`}
-    >
-      {ok ? "✓ " : "• "}
-      {label}
-    </span>
-  );
-}
-
-// Labeled output panel — shown in every section regardless of whether a run has happened.
-function OutputPanel({
-  children,
-  empty,
-}: {
-  children?: React.ReactNode;
-  empty: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-zinc-700/60 bg-zinc-950/60 p-5">
-      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
-        Output
-      </span>
-      {empty ? (
-        <p className="text-zinc-600 text-sm italic">
-          Run this step to see output here.
-        </p>
-      ) : (
-        children
-      )}
-    </div>
   );
 }
 
@@ -419,10 +374,17 @@ function Section1({
         }
       />
       <RunButton onClick={run} busy={busy} disabled={!state.sourceDataUrl} />
-      <OutputPanel empty={!error && !result}>
-        {error && <ErrorMsg msg={error} />}
-        {result && <RawJson data={result} />}
-      </OutputPanel>
+      <OutputTabs
+        empty={!error && !result}
+        rawData={result ?? (error ? { error } : null)}
+        interpreted={
+          error ? (
+            <ErrorMsg msg={error} />
+          ) : result ? (
+            <InterpretedResult kind="manifest" data={result} />
+          ) : null
+        }
+      />
     </SectionCard>
   );
 }
@@ -512,10 +474,17 @@ function Section2({
         parseError={parseError}
       />
       <RunButton onClick={run} busy={busy} disabled={!!parseError} />
-      <OutputPanel empty={!error && !result}>
-        {error && <ErrorMsg msg={error} />}
-        {result && <RawJson data={result} />}
-      </OutputPanel>
+      <OutputTabs
+        empty={!error && !result}
+        rawData={result ?? (error ? { error } : null)}
+        interpreted={
+          error ? (
+            <ErrorMsg msg={error} />
+          ) : result ? (
+            <InterpretedResult kind="collectionPrompt" data={result} />
+          ) : null
+        }
+      />
     </SectionCard>
   );
 }
@@ -636,17 +605,17 @@ function Section3({
       {!state.sourceDataUrl && (
         <p className="text-zinc-500 text-sm">Provide a source image first.</p>
       )}
-      <OutputPanel empty={!error && !result}>
-        {error && <ErrorMsg msg={error} />}
-        {result && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={result}
-            alt="collection image"
-            className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-950"
-          />
-        )}
-      </OutputPanel>
+      <OutputTabs
+        empty={!error && !result}
+        rawData={result ?? (error ? { error } : null)}
+        interpreted={
+          error ? (
+            <ErrorMsg msg={error} />
+          ) : result ? (
+            <InterpretedResult kind="collectionImage" data={{ imageUrl: result }} />
+          ) : null
+        }
+      />
     </SectionCard>
   );
 }
@@ -752,10 +721,17 @@ function Section4({
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">Generate or provide a collection image first (§3).</p>
       )}
-      <OutputPanel empty={!error && !result}>
-        {error && <ErrorMsg msg={error} />}
-        {result && <RawJson data={result} />}
-      </OutputPanel>
+      <OutputTabs
+        empty={!error && !result}
+        rawData={result ?? (error ? { error } : null)}
+        interpreted={
+          error ? (
+            <ErrorMsg msg={error} />
+          ) : result ? (
+            <InterpretedResult kind="individualPrompts" data={result} />
+          ) : null
+        }
+      />
     </SectionCard>
   );
 }
@@ -869,22 +845,17 @@ function Section5({ state }: { state: BenchState }) {
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
-      <OutputPanel empty={!error && !result}>
-        {error && <ErrorMsg msg={error} />}
-        {result && (
-          <div className="flex flex-col gap-4">
-            {result.imageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={result.imageUrl}
-                alt={result.iconName}
-                className="w-32 h-32 rounded-xl border border-zinc-700 object-contain bg-zinc-800/50"
-              />
-            )}
-            <RawJson data={result} />
-          </div>
-        )}
-      </OutputPanel>
+      <OutputTabs
+        empty={!error && !result}
+        rawData={result ?? (error ? { error } : null)}
+        interpreted={
+          error ? (
+            <ErrorMsg msg={error} />
+          ) : result ? (
+            <InterpretedResult kind="icon" data={result} />
+          ) : null
+        }
+      />
     </SectionCard>
   );
 }
@@ -919,7 +890,6 @@ function Section6({ state }: { state: BenchState }) {
     }
   };
 
-  const okCount = result?.filter((g) => g.status === "success").length ?? 0;
 
   return (
     <SectionCard
@@ -939,40 +909,17 @@ function Section6({ state }: { state: BenchState }) {
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
-      <OutputPanel empty={!error && !result}>
-        {error && <ErrorMsg msg={error} />}
-        {result && (
-          <>
-            <p className="text-cyan-400 text-sm font-mono">
-              {okCount}/{result.length} succeeded.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {result.map((g) => (
-                <div
-                  key={g.id}
-                  className="bg-zinc-950 border border-zinc-800 rounded-xl p-2 flex flex-col gap-2"
-                >
-                  <div className="aspect-square flex items-center justify-center bg-zinc-900 rounded-lg">
-                    {g.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={g.imageUrl}
-                        alt={g.iconName}
-                        className="w-full h-full object-contain p-2"
-                      />
-                    ) : (
-                      <span className="text-red-400 text-sm px-2 text-center">
-                        {g.error ?? "failed"}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-zinc-300 text-sm truncate">{g.iconName}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </OutputPanel>
+      <OutputTabs
+        empty={!error && !result}
+        rawData={result ?? (error ? { error } : null)}
+        interpreted={
+          error ? (
+            <ErrorMsg msg={error} />
+          ) : result ? (
+            <InterpretedResult kind="icons" data={result} />
+          ) : null
+        }
+      />
     </SectionCard>
   );
 }
@@ -1016,28 +963,25 @@ export default function BenchPage() {
       <Nav />
       <main className="min-h-screen bg-zinc-950 px-4 py-10">
         <div className="max-w-4xl mx-auto flex flex-col gap-10">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-bold text-zinc-100">Test Bench</h1>
-            <p className="text-zinc-400 text-base">
-              Each step in the icon pipeline as an independent, rerunnable
-              breakpoint. Edit any input, view the{" "}
-              <span className="text-cyan-400">exact resolved prompt</span> before
-              you run, and feed each step&apos;s output into the next.
-            </p>
-            <Link
-              href="/models"
-              className="self-start text-sm font-medium text-cyan-400/80 hover:text-cyan-300"
-            >
-              💲 Model costs &amp; capabilities →
-            </Link>
-            {/* Artifact flow indicator */}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <FlowBadge ok={!!state.sourceDataUrl} label="source" />
-              <FlowBadge ok={!!state.manifest} label="manifest" />
-              <FlowBadge ok={!!state.collectionPrompt} label="collection prompt" />
-              <FlowBadge ok={!!state.collectionImageDataUrl} label="collection image" />
-              <FlowBadge ok={!!state.individualPrompts} label="icon prompts" />
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h1 className="text-3xl font-bold text-zinc-100">Test Bench</h1>
+              <Link
+                href="/models"
+                className="text-sm font-medium text-cyan-400/80 hover:text-cyan-300"
+              >
+                💲 Model costs &amp; capabilities →
+              </Link>
             </div>
+            <PipelineOutline
+              present={{
+                source: !!state.sourceDataUrl,
+                manifest: !!state.manifest,
+                collectionPrompt: !!state.collectionPrompt,
+                collectionImage: !!state.collectionImageDataUrl,
+                iconPrompts: !!state.individualPrompts,
+              }}
+            />
           </div>
 
           <StackPicker
