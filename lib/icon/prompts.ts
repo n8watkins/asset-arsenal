@@ -1,7 +1,10 @@
-import type { IconFamilyStyle } from "@/types/icon-pipeline";
+// Prompt templates for the 6-step pipeline. Kept as exported constants and
+// builders so the service layer, the bench, and any future tuning live in one
+// place. These are the exact prompts the pipeline experiments against.
 
-// Prompt templates (PRD §15). Kept as exported constants/builders so the
-// service layer and any future tuning live in one place.
+// ---------------------------------------------------------------------------
+// Step 1 — Analyze source image -> icon manifest
+// ---------------------------------------------------------------------------
 
 export const ICON_ANALYSIS_PROMPT = `You are an expert icon analyst.
 
@@ -40,64 +43,157 @@ Give each icon a stable id like "icon_001", "icon_002", etc.
 Set iconCount to the number of icons you return.
 If a style field does not apply (e.g. there is no glow), set glowStyle to null.`;
 
-// The prompt-pack writer prompt. {ICON_FAMILY_STYLE} is interpolated with the
-// approved manifest's family style; the full manifest is sent alongside.
-export function buildPromptPackPrompt(
-  familyStyle: IconFamilyStyle,
-  manifestJson: string,
-): string {
-  return `You are generating image prompts for individual icon assets.
+// ---------------------------------------------------------------------------
+// Step 2 — Icon manifest -> icon collection (contact sheet) prompt
+// ---------------------------------------------------------------------------
 
-Given this icon manifest extracted from a single source image, write one image-generation prompt for each icon.
+export function buildCollectionPromptComposer(manifestJson: string): string {
+  return `You are an expert image prompt composer for icon extraction workflows.
 
-Each prompt must:
-- generate one icon only
+You will receive a JSON icon manifest extracted from a source image.
+
+Your job is to write one final high-quality image-generation prompt that creates a unified icon collection image.
+
+The final prompt should:
+- create a polished icon family image
+- include all meaningful icons from the JSON
 - preserve the shared icon family style
-- be centered
-- be reusable as a standalone UI icon
-- have no text
-- have no letters
-- have no extra UI
-- have no background clutter
-- use a 1:1 aspect ratio
-- include style details from the manifest
-- be appropriate for generation with gpt-image-1-mini
+- use a clean grid layout
+- make the icons the primary focus
+- avoid labels, fake text, UI clutter, and unrelated dashboard elements
+- feel production-ready and visually coherent
 
-Set aspectRatio to "1:1" and recommendedModel to "gpt-image-1-mini" for every prompt.
-Use the iconId and iconName from the manifest. If a prompt needs no extra notes, set notes to null.
+Prompt-writing rules:
+- return only one final prompt
+- do not return JSON
+- do not explain anything
+- do not mention the words "JSON," "manifest," or "schema"
+- write the prompt so it can be sent directly to an image-generation model
 
-Shared icon family style:
-${JSON.stringify(familyStyle, null, 2)}
+The final prompt should include:
+1. the overall goal
+2. the shared icon family style
+3. the icons to include
+4. the desired layout
+5. output constraints
+6. negative constraints
 
-Full icon manifest:
+Return only the final prompt text.
+
+Input:
 ${manifestJson}`;
 }
 
-// §15.3 generation wrapper. Wraps the per-icon prompt with consistent
-// system-level constraints + the shared family style.
-export function buildIconGenerationPrompt(
-  familyStyle: IconFamilyStyle,
-  iconPrompt: string,
-): string {
-  return `Create exactly one reusable icon asset.
+// ---------------------------------------------------------------------------
+// Step 3 — Generate the icon collection image (source image attached)
+// ---------------------------------------------------------------------------
 
-Requirements:
-- one icon only
-- centered composition
-- square 1:1 output
-- no words
-- no letters
-- no fake text
-- no extra UI cards
-- no full dashboard
-- no background clutter
-- clean silhouette
-- visually consistent with the shared icon family style
-- suitable for use in a web app or dashboard
+export function buildCollectionImageBody(
+  manifestJson: string,
+  collectionPrompt: string,
+): string {
+  return `Use the attached source image as the visual reference.
+
+Use this icon manifest as the source of truth for which icons should appear:
+${manifestJson}
+
+Now generate the icon collection image using this prompt:
+${collectionPrompt}`;
+}
+
+// ---------------------------------------------------------------------------
+// Step 4 — Contact sheet + manifest -> one prompt per icon
+// ---------------------------------------------------------------------------
+
+export function buildIndividualPromptComposer(manifestJson: string): string {
+  return `You are an expert icon prompt composer.
+
+You will receive:
+1. the original icon manifest JSON
+2. a contact sheet image showing the approved icon family style
+
+Your task:
+Create one image-generation prompt for each icon in the manifest.
+
+Each prompt should generate a single standalone icon that matches the contact sheet style.
+
+Global style to preserve:
+- premium dark-mode SaaS/developer-dashboard icon family
+- thin-to-medium monoline outline glyphs
+- rounded caps and rounded joins
+- simple geometric silhouettes
+- subtle neon glow and soft bloom
+- dark navy or transparent-friendly presentation
+- refined Lucide/Heroicons-inspired clarity
+- consistent stroke weight, padding, scale, and glow intensity
+
+Important:
+- Use the contact sheet image as the visual style reference.
+- Use the manifest as the source of truth for icon names, concepts, and meanings.
+- Preserve the shared icon family style.
+
+Each individual prompt must:
+- generate one icon only
+- use 1:1 square format
+- be centered
+- be reusable as a dashboard icon asset
+- match the contact sheet style
+- include the icon's concept and visual description
+- avoid labels, numbers, fake text, captions, watermarks, dashboards, cards, charts, buttons, full UI screens, and extra decoration
+
+For each icon set:
+- iconId and iconName from the manifest
+- concept from the manifest
+- contactSheetReference: describe where this icon appears in the contact sheet if possible (e.g. "row 2, column 3")
+- prompt: the final image-generation prompt for this single icon
+
+Also write a sharedStylePrompt: a shared style paragraph to reuse in every generation.
+
+Input icon manifest:
+${manifestJson}`;
+}
+
+// ---------------------------------------------------------------------------
+// Step 5 — Generation wrapper for a single icon (contact sheet attached)
+// ---------------------------------------------------------------------------
+
+export function buildIconGenerationWrapper(args: {
+  sharedStylePrompt: string;
+  iconName: string;
+  iconConcept: string;
+  iconPrompt: string;
+}): string {
+  return `Create exactly one isolated reusable icon asset.
+
+Use the attached icon contact sheet as the visual style reference. Match the same icon family style, stroke weight, glow intensity, proportions, padding, and dark-mode presentation.
 
 Shared icon family style:
-${JSON.stringify(familyStyle, null, 2)}
+${args.sharedStylePrompt}
+
+Icon to generate:
+${args.iconName}
+
+Icon concept:
+${args.iconConcept}
 
 Icon-specific prompt:
-${iconPrompt}`;
+${args.iconPrompt}
+
+Output requirements:
+- generate one icon only
+- 1:1 square composition
+- centered with generous padding
+- no text
+- no letters
+- no numbers
+- no label
+- no dashboard
+- no card UI
+- no chart UI
+- no button UI
+- no extra objects
+- no decorative clutter
+- transparent background if supported; otherwise use a simple dark navy background
+- preserve the premium dark-mode SaaS/developer-dashboard icon family style
+- make the icon reusable as a standalone dashboard asset`;
 }

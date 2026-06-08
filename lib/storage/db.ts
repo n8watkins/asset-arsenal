@@ -7,7 +7,7 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
 import type {
   IconManifest,
-  IconPromptPack,
+  IndividualIconPrompts,
   GeneratedIcon,
 } from "@/types/icon-pipeline";
 
@@ -34,7 +34,8 @@ export type StoredRun = {
   sourceId: string;
   createdAt: string;
   manifest?: IconManifest;
-  promptPack?: IconPromptPack;
+  collectionPrompt?: string;
+  individualPrompts?: IndividualIconPrompts;
   iconCount: number;
 };
 

@@ -102,7 +102,8 @@ export type SaveRunInput = {
   sourceId: string;
   createdAt: string;
   manifest?: StoredRun["manifest"];
-  promptPack?: StoredRun["promptPack"];
+  collectionPrompt?: StoredRun["collectionPrompt"];
+  individualPrompts?: StoredRun["individualPrompts"];
   iconCount: number;
 };
 
@@ -114,7 +115,8 @@ export async function saveRun(run: SaveRunInput): Promise<void> {
     sourceId: run.sourceId,
     createdAt: run.createdAt,
     manifest: run.manifest,
-    promptPack: run.promptPack,
+    collectionPrompt: run.collectionPrompt,
+    individualPrompts: run.individualPrompts,
     iconCount: run.iconCount,
   };
   await db.put("runs", record);

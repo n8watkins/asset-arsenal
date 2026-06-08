@@ -3,15 +3,18 @@
 import { useCallback, useState } from "react";
 import Header from "@/components/icon-pipeline/Header";
 import UploadCard from "@/components/icon-pipeline/UploadCard";
-import ManifestReviewCard from "@/components/icon-pipeline/ManifestReviewCard";
-import PromptReviewCard from "@/components/icon-pipeline/PromptReviewCard";
 import IconGrid from "@/components/icon-pipeline/IconGrid";
 import DebugDrawer from "@/components/icon-pipeline/DebugDrawer";
 import GalleryPicker from "@/components/gallery/GalleryPicker";
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import { useIconPipeline } from "@/lib/icon/use-icon-pipeline";
-import { analyzeImage, fetchPrompts, generateOneIcon } from "@/lib/icon/client-api";
-import { ICON_ANALYSIS_PROMPT } from "@/lib/icon/prompts";
+import {
+  analyzeImage,
+  composeCollectionPrompt,
+  generateCollectionImage,
+  composeIndividualPrompts,
+  generateIconsBatch,
+} from "@/lib/icon/client-api";
 import {
   readImageFile,
   downloadDataUrl,
@@ -25,18 +28,6 @@ import {
   getSourceAsDataUrl,
 } from "@/lib/storage/repo";
 import type { GeneratedIcon, SourceImage } from "@/types/icon-pipeline";
-
-// Run up to `limit` async tasks at a time.
-async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
-  let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++;
-      await fn(items[idx]);
-    }
-  });
-  await Promise.all(workers);
-}
 
 // Persistence is best-effort: a storage failure (private mode, quota) must
 // never break the generation flow.
@@ -53,7 +44,7 @@ export default function Home() {
   const { run, currentStep } = p;
   const [isUploading, setIsUploading] = useState(false);
 
-  // ---- Stage 1/2: upload + analysis ----
+  // ---- Step 0: upload ----
   const handleFileSelected = useCallback(
     async (file: File) => {
       setIsUploading(true);
@@ -79,19 +70,17 @@ export default function Home() {
     [p],
   );
 
-  // Re-run an existing library source (dropped onto upload, or "Use" button).
   const handleUseSource = useCallback(
     async (sourceId: string) => {
       setIsUploading(true);
       try {
         const dataUrl = await getSourceAsDataUrl(sourceId);
         if (!dataUrl) throw new Error("That source is no longer in the library.");
-        const source: SourceImage = {
-          id: sourceId, // reuse stored id so we don't duplicate the blob
+        p.uploadImage({
+          id: sourceId,
           imageUrl: dataUrl,
           uploadedAt: new Date().toISOString(),
-        };
-        p.uploadImage(source);
+        });
       } catch (e) {
         p.setError("upload", e instanceof Error ? e.message : "Could not load source.");
       } finally {
@@ -101,29 +90,19 @@ export default function Home() {
     [p],
   );
 
-  // Load an image into the pipeline directly from a data URL (used by the
-  // compact gallery's "Use" action — works for both stored sources and
-  // generated icons). The image is already persisted, so no save is needed.
   const handleUseDataUrl = useCallback(
-    (img: {
-      id: string;
-      dataUrl: string;
-      fileName: string;
-      kind: "source" | "icon";
-    }) => {
-      const source: SourceImage = {
-        // Sources reuse the stored id to avoid duplicating the blob; icons get
-        // a fresh id since they are not a `sources` record.
+    (img: { id: string; dataUrl: string; fileName: string; kind: "source" | "icon" }) => {
+      p.uploadImage({
         id: img.kind === "source" ? img.id : crypto.randomUUID(),
         imageUrl: img.dataUrl,
         fileName: img.fileName,
         uploadedAt: new Date().toISOString(),
-      };
-      p.uploadImage(source);
+      });
     },
     [p],
   );
 
+  // ---- Step 1: analyze ----
   const handleExtract = useCallback(async () => {
     if (!run.sourceImage?.imageUrl) return;
     p.startAnalysis();
@@ -138,109 +117,98 @@ export default function Home() {
     }
   }, [p, run.sourceImage]);
 
-  // ---- Stage 3→4: approve manifest, generate prompts ----
-  const handleApproveManifest = useCallback(async () => {
+  // ---- Step 2: compose collection prompt ----
+  const handleComposeCollectionPrompt = useCallback(async () => {
     if (!run.manifest) return;
-    p.approveManifest(); // → generating_prompts (loading)
+    p.startCollectionPrompt();
     try {
-      const { promptPack } = await fetchPrompts(run.manifest);
-      p.setPromptPack(promptPack);
+      const { collectionPrompt } = await composeCollectionPrompt(run.manifest);
+      p.setCollectionPrompt(collectionPrompt);
     } catch (e) {
       p.setError(
-        "prompt_generation",
-        e instanceof Error ? e.message : "Prompt generation failed.",
+        "collection_prompt",
+        e instanceof Error ? e.message : "Collection prompt composition failed.",
       );
     }
   }, [p, run.manifest]);
 
-  // ---- Stage 5→6: generate icons (progressive, per-icon) ----
-  const generateIconsFor = useCallback(
-    async (targets: GeneratedIcon[]) => {
-      const manifest = run.manifest;
-      const promptPack = run.promptPack;
-      if (!manifest || !promptPack) return;
-      await runPool(targets, 3, async (slot) => {
-        p.updateGeneratedIcon(slot.id, { status: "generating", error: undefined });
-        const icon = manifest.icons.find((ic) => ic.id === slot.iconId);
-        const prompt = promptPack.prompts.find((pr) => pr.iconId === slot.iconId);
-        if (!icon || !prompt) {
-          p.updateGeneratedIcon(slot.id, {
-            status: "failed",
-            error: "Missing icon or prompt for this slot.",
-          });
-          return;
-        }
-        try {
-          const { generatedIcon } = await generateOneIcon({
-            icon,
-            prompt,
-            iconFamilyStyle: manifest.iconFamilyStyle,
-          });
-          const settled: GeneratedIcon = {
-            ...slot,
-            status: generatedIcon.status,
-            imageUrl: generatedIcon.imageUrl,
-            error: generatedIcon.error,
-            modelUsed: generatedIcon.modelUsed,
-          };
-          p.updateGeneratedIcon(slot.id, {
-            status: settled.status,
-            imageUrl: settled.imageUrl,
-            error: settled.error,
-            modelUsed: settled.modelUsed,
-          });
-          if (settled.status === "success" && settled.imageUrl) {
-            persist("saveIcon", () => saveIcon(settled, run.id));
-          }
-        } catch (e) {
-          p.updateGeneratedIcon(slot.id, {
-            status: "failed",
-            error: e instanceof Error ? e.message : "Generation failed.",
-          });
-        }
+  // ---- Step 3: generate contact sheet ----
+  const handleGenerateCollectionImage = useCallback(async () => {
+    if (!run.manifest || !run.collectionPrompt || !run.sourceImage?.imageUrl) return;
+    p.startCollectionImage();
+    try {
+      const { collectionImage } = await generateCollectionImage({
+        sourceImageBase64: run.sourceImage.imageUrl,
+        manifest: run.manifest,
+        collectionPrompt: run.collectionPrompt,
       });
-    },
-    [p, run.manifest, run.promptPack, run.id],
-  );
+      p.setCollectionImage(collectionImage);
+    } catch (e) {
+      p.setError(
+        "collection_image",
+        e instanceof Error ? e.message : "Contact sheet generation failed.",
+      );
+    }
+  }, [p, run.manifest, run.collectionPrompt, run.sourceImage]);
 
-  const handleGenerate = useCallback(async () => {
-    if (!run.promptPack || !run.manifest || !run.sourceImage) return;
-    p.approvePrompts(); // → generating_icons
-    // Persist the run shell so icons have a parent in the library.
+  // ---- Step 4: compose individual prompts ----
+  const handleComposeIndividualPrompts = useCallback(async () => {
+    if (!run.manifest || !run.collectionImage?.imageUrl) return;
+    p.startIndividualPrompts();
+    try {
+      const { individualPrompts } = await composeIndividualPrompts({
+        collectionImageBase64: run.collectionImage.imageUrl,
+        manifest: run.manifest,
+      });
+      p.setIndividualPrompts(individualPrompts);
+    } catch (e) {
+      p.setError(
+        "individual_prompts",
+        e instanceof Error ? e.message : "Icon prompt composition failed.",
+      );
+    }
+  }, [p, run.manifest, run.collectionImage]);
+
+  // ---- Step 5: generate icons (batch) ----
+  const handleGenerateIcons = useCallback(async () => {
+    if (!run.individualPrompts || !run.collectionImage?.imageUrl) return;
+    p.startGeneration();
     persist("saveRun", () =>
       saveRun({
         id: run.id,
         sourceId: run.sourceImage.id,
         createdAt: run.createdAt,
         manifest: run.manifest,
-        promptPack: run.promptPack,
-        iconCount: run.manifest!.iconCount,
+        collectionPrompt: run.collectionPrompt,
+        individualPrompts: run.individualPrompts,
+        iconCount: run.individualPrompts!.iconPrompts.length,
       }),
     );
-    const slots: GeneratedIcon[] = run.promptPack.prompts.map((pr) => ({
-      id: crypto.randomUUID(),
-      iconId: pr.iconId,
-      iconName: pr.iconName,
-      prompt: pr.prompt,
-      imageUrl: "",
-      modelUsed: pr.recommendedModel,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    }));
-    p.initGeneratedIcons(slots);
-    await generateIconsFor(slots);
-    p.finishGeneration();
-  }, [p, run.promptPack, run.manifest, run.sourceImage, run.id, run.createdAt, generateIconsFor]);
+    try {
+      const { generatedIcons } = await generateIconsBatch({
+        collectionImageBase64: run.collectionImage.imageUrl,
+        individualPrompts: run.individualPrompts,
+      });
+      p.initGeneratedIcons(generatedIcons);
+      p.finishGeneration();
+      generatedIcons
+        .filter((g) => g.status === "success" && g.imageUrl)
+        .forEach((g) => persist("saveIcon", () => saveIcon(g, run.id)));
+    } catch (e) {
+      p.setError(
+        "icon_generation",
+        e instanceof Error ? e.message : "Icon generation failed.",
+      );
+    }
+  }, [p, run]);
 
-  const handleRegenerate = useCallback(
-    async (generatedIconId: string) => {
-      const slot = run.generatedIcons.find((g) => g.id === generatedIconId);
-      if (slot) await generateIconsFor([slot]);
-    },
-    [run.generatedIcons, generateIconsFor],
-  );
+  const handleRegenerate = useCallback(async () => {
+    // Single-icon regeneration is a bench affordance; the main page regenerates
+    // the whole set for simplicity.
+    await handleGenerateIcons();
+  }, [handleGenerateIcons]);
 
-  // ---- Export (PRD §20) ----
+  // ---- Export ----
   const handleDownload = useCallback((icon: GeneratedIcon) => {
     downloadDataUrl(icon.imageUrl, `${slugify(icon.iconName)}.png`);
   }, []);
@@ -258,15 +226,10 @@ export default function Home() {
   }, [run.manifest]);
 
   const handleCopyPrompts = useCallback(() => {
-    if (run.promptPack) copyText(JSON.stringify(run.promptPack, null, 2));
-  }, [run.promptPack]);
+    if (run.individualPrompts) copyText(JSON.stringify(run.individualPrompts, null, 2));
+  }, [run.individualPrompts]);
 
-  // ---- Render: accumulating chat-style flow ----
   const latestError = run.errors[run.errors.length - 1];
-  const hasSource = !!run.sourceImage?.imageUrl;
-  const showManifest = !!run.manifest;
-  const showPrompts = !!run.promptPack;
-  const showGrid = run.generatedIcons.length > 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
@@ -280,7 +243,7 @@ export default function Home() {
             onFileSelected={handleFileSelected}
             onExtract={handleExtract}
             onSourceDrop={handleUseSource}
-            disabled={currentStep === "analyzing_icons"}
+            disabled={currentStep === "analyzing"}
           />
 
           <div className="-mt-2 flex items-center gap-3 text-xs text-zinc-500">
@@ -292,44 +255,99 @@ export default function Home() {
             />
           </div>
 
-          {hasSource && !showManifest && (
-            <PromptDisclosure
-              label="View analysis prompt that will be sent"
-              prompt={`${ICON_ANALYSIS_PROMPT}\n\n[+ the uploaded image is sent as image input]`}
-            />
-          )}
-
-          {currentStep === "analyzing_icons" && (
+          {currentStep === "analyzing" && (
             <StatusLine text="Analyzing the image for icon candidates…" />
           )}
 
-          {showManifest && (
-            <ManifestReviewCard
-              manifest={run.manifest!}
-              onEditIcon={p.editIcon}
-              onRemoveIcon={p.removeIcon}
-              onApprove={handleApproveManifest}
-              onRerun={handleExtract}
-              busy={currentStep === "generating_prompts"}
-            />
+          {/* Step 1 result — manifest */}
+          {run.manifest && (
+            <StepCard
+              title="1 · Icon manifest"
+              subtitle={`${run.manifest.iconCount} icons identified`}
+            >
+              <PromptDisclosure
+                label="View manifest JSON"
+                prompt={JSON.stringify(run.manifest, null, 2)}
+              />
+              <NextButton
+                onClick={handleComposeCollectionPrompt}
+                busy={currentStep === "composing_collection_prompt"}
+                disabled={!!run.collectionPrompt}
+                label="Compose collection prompt →"
+              />
+            </StepCard>
           )}
 
-          {currentStep === "generating_prompts" && (
-            <StatusLine text="Writing generation prompts for each icon…" />
+          {currentStep === "composing_collection_prompt" && (
+            <StatusLine text="Composing the icon collection prompt…" />
           )}
 
-          {showPrompts && (
-            <PromptReviewCard
-              promptPack={run.promptPack!}
-              iconFamilyStyle={run.manifest?.iconFamilyStyle}
-              onEditPrompt={p.editPrompt}
-              onApprove={() => {}}
-              onGenerate={handleGenerate}
-              busy={currentStep === "generating_icons"}
-            />
+          {/* Step 2 result — collection prompt */}
+          {run.collectionPrompt && (
+            <StepCard title="2 · Collection prompt">
+              <p className="whitespace-pre-wrap rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-xs text-zinc-300">
+                {run.collectionPrompt}
+              </p>
+              <NextButton
+                onClick={handleGenerateCollectionImage}
+                busy={currentStep === "generating_collection_image"}
+                disabled={!!run.collectionImage}
+                label="Generate contact sheet →"
+              />
+            </StepCard>
           )}
 
-          {showGrid && (
+          {currentStep === "generating_collection_image" && (
+            <StatusLine text="Generating the icon collection image (contact sheet)…" />
+          )}
+
+          {/* Step 3 result — contact sheet */}
+          {run.collectionImage?.imageUrl && (
+            <StepCard title="3 · Contact sheet">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={run.collectionImage.imageUrl}
+                alt="contact sheet"
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 object-contain"
+              />
+              <NextButton
+                onClick={handleComposeIndividualPrompts}
+                busy={currentStep === "composing_individual_prompts"}
+                disabled={!!run.individualPrompts}
+                label="Compose icon prompts →"
+              />
+            </StepCard>
+          )}
+
+          {currentStep === "composing_individual_prompts" && (
+            <StatusLine text="Composing one prompt per icon from the contact sheet…" />
+          )}
+
+          {/* Step 4 result — individual prompts */}
+          {run.individualPrompts && (
+            <StepCard
+              title="4 · Icon prompts"
+              subtitle={`${run.individualPrompts.iconPrompts.length} prompts`}
+            >
+              <PromptDisclosure
+                label="View individual prompts JSON"
+                prompt={JSON.stringify(run.individualPrompts, null, 2)}
+              />
+              <NextButton
+                onClick={handleGenerateIcons}
+                busy={currentStep === "generating_icons"}
+                disabled={run.generatedIcons.length > 0}
+                label="Generate icons →"
+              />
+            </StepCard>
+          )}
+
+          {currentStep === "generating_icons" && (
+            <StatusLine text="Generating each icon from the contact sheet…" />
+          )}
+
+          {/* Step 5 result — generated icons */}
+          {run.generatedIcons.length > 0 && (
             <IconGrid
               icons={run.generatedIcons}
               onRegenerate={handleRegenerate}
@@ -361,6 +379,48 @@ export default function Home() {
 
       <DebugDrawer run={run} />
     </div>
+  );
+}
+
+function StepCard({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100">{title}</h2>
+        {subtitle && <p className="mt-0.5 text-sm text-zinc-400">{subtitle}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function NextButton({
+  onClick,
+  busy,
+  disabled,
+  label,
+}: {
+  onClick: () => void;
+  busy: boolean;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy || disabled}
+      className="self-start rounded-xl bg-violet-600 px-5 py-2 font-semibold text-white transition-colors hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:pointer-events-none disabled:opacity-40"
+    >
+      {busy ? "Working…" : label}
+    </button>
   );
 }
 

@@ -1,9 +1,8 @@
-import { IconPromptsRequestSchema } from "@/lib/icon/schemas/request.schema";
+import { GenerateCollectionImageRequestSchema } from "@/lib/icon/schemas/request.schema";
 import { IconPipelineError } from "@/lib/icon/errors";
-import { generateIconPrompts } from "@/lib/openai/generate-icon-prompts";
+import { generateCollectionImage } from "@/lib/openai/generate-collection-image";
 
 export async function POST(request: Request) {
-  // 1. Parse body
   let body: unknown;
   try {
     body = await request.json();
@@ -11,8 +10,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  // 2. Validate shape
-  const parsed = IconPromptsRequestSchema.safeParse(body);
+  const parsed = GenerateCollectionImageRequestSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
       { error: `Invalid request: ${parsed.error.issues[0]?.message ?? "validation failed."}` },
@@ -20,17 +18,16 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3. Call service
   try {
-    const promptPack = await generateIconPrompts(parsed.data.manifest);
-    return Response.json({ promptPack });
+    const collectionImage = await generateCollectionImage(parsed.data);
+    return Response.json({ collectionImage });
   } catch (err) {
-    console.error("[icon-prompts]", err);
+    console.error("[icons/generate-collection-image]", err);
     if (err instanceof IconPipelineError) {
       return Response.json({ error: err.message }, { status: 500 });
     }
     return Response.json(
-      { error: "An unexpected error occurred during prompt generation." },
+      { error: "An unexpected error occurred while generating the collection image." },
       { status: 500 },
     );
   }

@@ -1,9 +1,8 @@
-import { GenerateIconRequestSchema } from "@/lib/icon/schemas/request.schema";
+import { ComposeIndividualPromptsRequestSchema } from "@/lib/icon/schemas/request.schema";
 import { IconPipelineError } from "@/lib/icon/errors";
-import { generateIcon } from "@/lib/openai/generate-icon";
+import { composeIndividualPrompts } from "@/lib/openai/compose-individual-prompts";
 
 export async function POST(request: Request) {
-  // 1. Parse body
   let body: unknown;
   try {
     body = await request.json();
@@ -11,8 +10,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  // 2. Validate shape
-  const parsed = GenerateIconRequestSchema.safeParse(body);
+  const parsed = ComposeIndividualPromptsRequestSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
       { error: `Invalid request: ${parsed.error.issues[0]?.message ?? "validation failed."}` },
@@ -20,17 +18,16 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3. Call service
   try {
-    const generatedIcon = await generateIcon(parsed.data);
-    return Response.json({ generatedIcon });
+    const individualPrompts = await composeIndividualPrompts(parsed.data);
+    return Response.json({ individualPrompts });
   } catch (err) {
-    console.error("[generate-icon]", err);
+    console.error("[icons/compose-individual-prompts]", err);
     if (err instanceof IconPipelineError) {
       return Response.json({ error: err.message }, { status: 500 });
     }
     return Response.json(
-      { error: "An unexpected error occurred during icon generation." },
+      { error: "An unexpected error occurred while composing individual prompts." },
       { status: 500 },
     );
   }

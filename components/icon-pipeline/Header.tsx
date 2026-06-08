@@ -11,23 +11,34 @@ import { MODEL_ROLES } from "@/lib/icon/models";
 const STEP_LABELS: Record<PipelineStep, string> = {
   idle: "idle",
   image_uploaded: "image uploaded",
-  analyzing_icons: "analyzing…",
+  analyzing: "analyzing…",
   manifest_ready: "manifest ready",
-  generating_prompts: "generating prompts…",
-  prompts_ready: "prompts ready",
+  composing_collection_prompt: "composing collection prompt…",
+  collection_prompt_ready: "collection prompt ready",
+  generating_collection_image: "generating contact sheet…",
+  collection_image_ready: "contact sheet ready",
+  composing_individual_prompts: "composing icon prompts…",
+  individual_prompts_ready: "icon prompts ready",
   generating_icons: "generating icons…",
   icons_ready: "done",
   error: "error",
 };
 
+const BUSY = "bg-violet-900/50 text-violet-300 animate-pulse";
+const READY = "bg-cyan-900/50 text-cyan-300";
+
 const STEP_COLORS: Record<PipelineStep, string> = {
   idle: "bg-zinc-700 text-zinc-400",
-  image_uploaded: "bg-cyan-900/50 text-cyan-300",
-  analyzing_icons: "bg-violet-900/50 text-violet-300 animate-pulse",
-  manifest_ready: "bg-cyan-900/50 text-cyan-300",
-  generating_prompts: "bg-violet-900/50 text-violet-300 animate-pulse",
-  prompts_ready: "bg-cyan-900/50 text-cyan-300",
-  generating_icons: "bg-violet-900/50 text-violet-300 animate-pulse",
+  image_uploaded: READY,
+  analyzing: BUSY,
+  manifest_ready: READY,
+  composing_collection_prompt: BUSY,
+  collection_prompt_ready: READY,
+  generating_collection_image: BUSY,
+  collection_image_ready: READY,
+  composing_individual_prompts: BUSY,
+  individual_prompts_ready: READY,
+  generating_icons: BUSY,
   icons_ready: "bg-emerald-900/50 text-emerald-300",
   error: "bg-red-900/50 text-red-300",
 };
@@ -71,7 +82,7 @@ export default function Header({ currentStep, onReset }: HeaderProps) {
         <span className="text-zinc-700">·</span>
         <span className="flex items-center gap-1">
           <span className="text-zinc-600">prompts</span>
-          <span className="text-cyan-500/70">{MODEL_ROLES.promptWriterModel}</span>
+          <span className="text-cyan-500/70">{MODEL_ROLES.individualPromptModel}</span>
         </span>
         <span className="text-zinc-700">·</span>
         <span className="flex items-center gap-1">

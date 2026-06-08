@@ -6,19 +6,13 @@ import { ICON_ANALYSIS_PROMPT } from "@/lib/icon/prompts";
 import { MODEL_ROLES } from "@/lib/icon/models";
 import { getClient } from "./client";
 
-/**
- * Normalises the incoming value to a full data URL.
- * Accepts either a raw base64 string or an existing "data:…;base64,…" URL.
- */
+/** Normalises the incoming value to a full data URL. */
 function toDataUrl(imageBase64: string): string {
-  if (imageBase64.startsWith("data:")) {
-    return imageBase64;
-  }
-  // Default to PNG; the vision model doesn't care about the declared mime type
-  // when the image is already decoded — use a safe fallback.
+  if (imageBase64.startsWith("data:")) return imageBase64;
   return `data:image/png;base64,${imageBase64}`;
 }
 
+/** Step 1 — source image -> icon manifest. */
 export async function analyzeIcons(
   imageBase64: string,
   _fileName?: string,
@@ -45,7 +39,6 @@ export async function analyzeIcons(
     if (!manifest) {
       throw new IconPipelineError("analysis", "Model returned no manifest.");
     }
-
     return manifest as IconManifest;
   } catch (err) {
     if (err instanceof IconPipelineError) throw err;

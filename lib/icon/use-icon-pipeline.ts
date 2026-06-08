@@ -7,9 +7,9 @@ import type {
   PipelineErrorStep,
   SourceImage,
   IconManifest,
-  IconPromptPack,
+  CollectionImage,
+  IndividualIconPrompts,
   GeneratedIcon,
-  DecomposedIcon,
 } from "@/types/icon-pipeline";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,9 @@ function freshRun(): IconExtractionRun {
     // an empty sentinel here and overwrite it on the first real upload action.
     sourceImage: undefined as unknown as SourceImage,
     manifest: undefined,
-    promptPack: undefined,
+    collectionPrompt: undefined,
+    collectionImage: undefined,
+    individualPrompts: undefined,
     generatedIcons: [],
     currentStep: "idle",
     errors: [],
@@ -41,20 +43,19 @@ function touch(run: IconExtractionRun): IconExtractionRun {
 }
 
 // ---------------------------------------------------------------------------
-// Action union
+// Action union — one "start" + one "set" per pipeline step
 // ---------------------------------------------------------------------------
 
 type Action =
   | { type: "UPLOAD_IMAGE"; source: SourceImage }
   | { type: "START_ANALYSIS" }
   | { type: "SET_MANIFEST"; manifest: IconManifest }
-  | { type: "EDIT_ICON"; iconId: string; patch: Partial<DecomposedIcon> }
-  | { type: "REMOVE_ICON"; iconId: string }
-  | { type: "APPROVE_MANIFEST" }
-  | { type: "START_PROMPTS" }
-  | { type: "SET_PROMPT_PACK"; pack: IconPromptPack }
-  | { type: "EDIT_PROMPT"; iconId: string; text: string }
-  | { type: "APPROVE_PROMPTS" }
+  | { type: "START_COLLECTION_PROMPT" }
+  | { type: "SET_COLLECTION_PROMPT"; collectionPrompt: string }
+  | { type: "START_COLLECTION_IMAGE" }
+  | { type: "SET_COLLECTION_IMAGE"; collectionImage: CollectionImage }
+  | { type: "START_INDIVIDUAL_PROMPTS" }
+  | { type: "SET_INDIVIDUAL_PROMPTS"; individualPrompts: IndividualIconPrompts }
   | { type: "START_GENERATION" }
   | { type: "INIT_GENERATED_ICONS"; icons: GeneratedIcon[] }
   | { type: "UPDATE_GENERATED_ICON"; id: string; patch: Partial<GeneratedIcon> }
@@ -69,146 +70,98 @@ type Action =
 
 function reducer(state: IconExtractionRun, action: Action): IconExtractionRun {
   switch (action.type) {
-    case "UPLOAD_IMAGE": {
+    case "UPLOAD_IMAGE":
       return touch({
         ...state,
         sourceImage: action.source,
-        currentStep: "image_uploaded" as PipelineStep,
+        currentStep: "image_uploaded",
       });
-    }
 
-    case "START_ANALYSIS": {
-      return touch({ ...state, currentStep: "analyzing_icons" });
-    }
+    case "START_ANALYSIS":
+      return touch({ ...state, currentStep: "analyzing" });
 
-    case "SET_MANIFEST": {
+    case "SET_MANIFEST":
       return touch({
         ...state,
         manifest: action.manifest,
         currentStep: "manifest_ready",
       });
-    }
 
-    case "EDIT_ICON": {
-      if (!state.manifest) return state;
-      const updatedIcons = state.manifest.icons.map((icon) =>
-        icon.id === action.iconId ? { ...icon, ...action.patch } : icon
-      );
+    case "START_COLLECTION_PROMPT":
+      return touch({ ...state, currentStep: "composing_collection_prompt" });
+
+    case "SET_COLLECTION_PROMPT":
       return touch({
         ...state,
-        manifest: {
-          ...state.manifest,
-          icons: updatedIcons,
-          iconCount: updatedIcons.length,
-        },
+        collectionPrompt: action.collectionPrompt,
+        currentStep: "collection_prompt_ready",
       });
-    }
 
-    case "REMOVE_ICON": {
-      if (!state.manifest) return state;
-      const remainingIcons = state.manifest.icons.filter(
-        (icon) => icon.id !== action.iconId
-      );
+    case "START_COLLECTION_IMAGE":
+      return touch({ ...state, currentStep: "generating_collection_image" });
+
+    case "SET_COLLECTION_IMAGE":
       return touch({
         ...state,
-        manifest: {
-          ...state.manifest,
-          icons: remainingIcons,
-          iconCount: remainingIcons.length,
-        },
+        collectionImage: action.collectionImage,
+        currentStep: "collection_image_ready",
       });
-    }
 
-    case "APPROVE_MANIFEST": {
-      // Alias: user reviews manifest and approves — moves to generating_prompts stage
-      return touch({ ...state, currentStep: "generating_prompts" });
-    }
+    case "START_INDIVIDUAL_PROMPTS":
+      return touch({ ...state, currentStep: "composing_individual_prompts" });
 
-    case "START_PROMPTS": {
-      return touch({ ...state, currentStep: "generating_prompts" });
-    }
-
-    case "SET_PROMPT_PACK": {
+    case "SET_INDIVIDUAL_PROMPTS":
       return touch({
         ...state,
-        promptPack: action.pack,
-        currentStep: "prompts_ready",
+        individualPrompts: action.individualPrompts,
+        currentStep: "individual_prompts_ready",
       });
-    }
 
-    case "EDIT_PROMPT": {
-      if (!state.promptPack) return state;
-      const updatedPrompts = state.promptPack.prompts.map((p) =>
-        p.iconId === action.iconId ? { ...p, prompt: action.text } : p
-      );
-      return touch({
-        ...state,
-        promptPack: { ...state.promptPack, prompts: updatedPrompts },
-      });
-    }
-
-    case "APPROVE_PROMPTS": {
+    case "START_GENERATION":
       return touch({ ...state, currentStep: "generating_icons" });
-    }
 
-    case "START_GENERATION": {
-      return touch({ ...state, currentStep: "generating_icons" });
-    }
-
-    case "INIT_GENERATED_ICONS": {
+    case "INIT_GENERATED_ICONS":
       return touch({ ...state, generatedIcons: action.icons });
-    }
 
-    case "UPDATE_GENERATED_ICON": {
-      const updated = state.generatedIcons.map((gi) =>
-        gi.id === action.id ? { ...gi, ...action.patch } : gi
-      );
-      return touch({ ...state, generatedIcons: updated });
-    }
+    case "UPDATE_GENERATED_ICON":
+      return touch({
+        ...state,
+        generatedIcons: state.generatedIcons.map((gi) =>
+          gi.id === action.id ? { ...gi, ...action.patch } : gi,
+        ),
+      });
 
-    case "FINISH_GENERATION": {
+    case "FINISH_GENERATION":
       return touch({ ...state, currentStep: "icons_ready" });
-    }
 
-    case "SET_ERROR": {
-      // Preserve all prior successful outputs; push error; mark step = error
+    case "SET_ERROR":
       return touch({
         ...state,
         currentStep: "error",
         errors: [
           ...state.errors,
-          {
-            step: action.step,
-            message: action.message,
-            createdAt: now(),
-          },
+          { step: action.step, message: action.message, createdAt: now() },
         ],
       });
-    }
 
     case "CLEAR_ERROR": {
-      // Pop the latest error so the caller can allow retry of failed step
+      // Pop the latest error and return to the furthest-along ready step.
       const remaining = state.errors.slice(0, -1);
-      // Determine which step to return to based on what data is present
       let recoveryStep: PipelineStep = "idle";
       if (state.generatedIcons.length > 0) recoveryStep = "generating_icons";
-      else if (state.promptPack) recoveryStep = "prompts_ready";
+      else if (state.individualPrompts) recoveryStep = "individual_prompts_ready";
+      else if (state.collectionImage) recoveryStep = "collection_image_ready";
+      else if (state.collectionPrompt) recoveryStep = "collection_prompt_ready";
       else if (state.manifest) recoveryStep = "manifest_ready";
       else if (state.sourceImage) recoveryStep = "image_uploaded";
-      return touch({
-        ...state,
-        errors: remaining,
-        currentStep: recoveryStep,
-      });
+      return touch({ ...state, errors: remaining, currentStep: recoveryStep });
     }
 
-    case "RESET": {
+    case "RESET":
       return freshRun();
-    }
 
-    default: {
+    default:
       return state;
-    }
   }
 }
 
@@ -217,21 +170,18 @@ function reducer(state: IconExtractionRun, action: Action): IconExtractionRun {
 // ---------------------------------------------------------------------------
 
 export type UseIconPipelineReturn = {
-  // State
   run: IconExtractionRun;
   currentStep: PipelineStep;
 
-  // Actions
   uploadImage: (source: SourceImage) => void;
   startAnalysis: () => void;
   setManifest: (manifest: IconManifest) => void;
-  editIcon: (iconId: string, patch: Partial<DecomposedIcon>) => void;
-  removeIcon: (iconId: string) => void;
-  approveManifest: () => void;
-  startPrompts: () => void;
-  setPromptPack: (pack: IconPromptPack) => void;
-  editPrompt: (iconId: string, text: string) => void;
-  approvePrompts: () => void;
+  startCollectionPrompt: () => void;
+  setCollectionPrompt: (collectionPrompt: string) => void;
+  startCollectionImage: () => void;
+  setCollectionImage: (collectionImage: CollectionImage) => void;
+  startIndividualPrompts: () => void;
+  setIndividualPrompts: (individualPrompts: IndividualIconPrompts) => void;
   startGeneration: () => void;
   initGeneratedIcons: (icons: GeneratedIcon[]) => void;
   updateGeneratedIcon: (id: string, patch: Partial<GeneratedIcon>) => void;
@@ -244,112 +194,69 @@ export type UseIconPipelineReturn = {
 export function useIconPipeline(): UseIconPipelineReturn {
   const [run, dispatch] = useReducer(reducer, undefined, freshRun);
 
-  const uploadImage = useCallback(
-    (source: SourceImage) => dispatch({ type: "UPLOAD_IMAGE", source }),
-    []
-  );
-
-  const startAnalysis = useCallback(
-    () => dispatch({ type: "START_ANALYSIS" }),
-    []
-  );
-
-  const setManifest = useCallback(
-    (manifest: IconManifest) => dispatch({ type: "SET_MANIFEST", manifest }),
-    []
-  );
-
-  const editIcon = useCallback(
-    (iconId: string, patch: Partial<DecomposedIcon>) =>
-      dispatch({ type: "EDIT_ICON", iconId, patch }),
-    []
-  );
-
-  const removeIcon = useCallback(
-    (iconId: string) => dispatch({ type: "REMOVE_ICON", iconId }),
-    []
-  );
-
-  const approveManifest = useCallback(
-    () => dispatch({ type: "APPROVE_MANIFEST" }),
-    []
-  );
-
-  const startPrompts = useCallback(
-    () => dispatch({ type: "START_PROMPTS" }),
-    []
-  );
-
-  const setPromptPack = useCallback(
-    (pack: IconPromptPack) => dispatch({ type: "SET_PROMPT_PACK", pack }),
-    []
-  );
-
-  const editPrompt = useCallback(
-    (iconId: string, text: string) =>
-      dispatch({ type: "EDIT_PROMPT", iconId, text }),
-    []
-  );
-
-  const approvePrompts = useCallback(
-    () => dispatch({ type: "APPROVE_PROMPTS" }),
-    []
-  );
-
-  const startGeneration = useCallback(
-    () => dispatch({ type: "START_GENERATION" }),
-    []
-  );
-
-  const initGeneratedIcons = useCallback(
-    (icons: GeneratedIcon[]) =>
-      dispatch({ type: "INIT_GENERATED_ICONS", icons }),
-    []
-  );
-
-  const updateGeneratedIcon = useCallback(
-    (id: string, patch: Partial<GeneratedIcon>) =>
-      dispatch({ type: "UPDATE_GENERATED_ICON", id, patch }),
-    []
-  );
-
-  const finishGeneration = useCallback(
-    () => dispatch({ type: "FINISH_GENERATION" }),
-    []
-  );
-
-  const setError = useCallback(
-    (step: PipelineErrorStep, message: string) =>
-      dispatch({ type: "SET_ERROR", step, message }),
-    []
-  );
-
-  const clearError = useCallback(
-    () => dispatch({ type: "CLEAR_ERROR" }),
-    []
-  );
-
-  const reset = useCallback(() => dispatch({ type: "RESET" }), []);
-
   return {
     run,
     currentStep: run.currentStep,
-    uploadImage,
-    startAnalysis,
-    setManifest,
-    editIcon,
-    removeIcon,
-    approveManifest,
-    startPrompts,
-    setPromptPack,
-    editPrompt,
-    approvePrompts,
-    startGeneration,
-    initGeneratedIcons,
-    updateGeneratedIcon,
-    finishGeneration,
-    setError,
-    clearError,
-    reset,
+    uploadImage: useCallback(
+      (source: SourceImage) => dispatch({ type: "UPLOAD_IMAGE", source }),
+      [],
+    ),
+    startAnalysis: useCallback(() => dispatch({ type: "START_ANALYSIS" }), []),
+    setManifest: useCallback(
+      (manifest: IconManifest) => dispatch({ type: "SET_MANIFEST", manifest }),
+      [],
+    ),
+    startCollectionPrompt: useCallback(
+      () => dispatch({ type: "START_COLLECTION_PROMPT" }),
+      [],
+    ),
+    setCollectionPrompt: useCallback(
+      (collectionPrompt: string) =>
+        dispatch({ type: "SET_COLLECTION_PROMPT", collectionPrompt }),
+      [],
+    ),
+    startCollectionImage: useCallback(
+      () => dispatch({ type: "START_COLLECTION_IMAGE" }),
+      [],
+    ),
+    setCollectionImage: useCallback(
+      (collectionImage: CollectionImage) =>
+        dispatch({ type: "SET_COLLECTION_IMAGE", collectionImage }),
+      [],
+    ),
+    startIndividualPrompts: useCallback(
+      () => dispatch({ type: "START_INDIVIDUAL_PROMPTS" }),
+      [],
+    ),
+    setIndividualPrompts: useCallback(
+      (individualPrompts: IndividualIconPrompts) =>
+        dispatch({ type: "SET_INDIVIDUAL_PROMPTS", individualPrompts }),
+      [],
+    ),
+    startGeneration: useCallback(
+      () => dispatch({ type: "START_GENERATION" }),
+      [],
+    ),
+    initGeneratedIcons: useCallback(
+      (icons: GeneratedIcon[]) =>
+        dispatch({ type: "INIT_GENERATED_ICONS", icons }),
+      [],
+    ),
+    updateGeneratedIcon: useCallback(
+      (id: string, patch: Partial<GeneratedIcon>) =>
+        dispatch({ type: "UPDATE_GENERATED_ICON", id, patch }),
+      [],
+    ),
+    finishGeneration: useCallback(
+      () => dispatch({ type: "FINISH_GENERATION" }),
+      [],
+    ),
+    setError: useCallback(
+      (step: PipelineErrorStep, message: string) =>
+        dispatch({ type: "SET_ERROR", step, message }),
+      [],
+    ),
+    clearError: useCallback(() => dispatch({ type: "CLEAR_ERROR" }), []),
+    reset: useCallback(() => dispatch({ type: "RESET" }), []),
   };
 }

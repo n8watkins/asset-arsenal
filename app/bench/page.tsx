@@ -4,24 +4,55 @@ import Link from "next/link";
 import { useState, useRef, useCallback } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
-  buildPromptPackPrompt,
-  buildIconGenerationPrompt,
+  buildCollectionPromptComposer,
+  buildCollectionImageBody,
+  buildIndividualPromptComposer,
+  buildIconGenerationWrapper,
 } from "@/lib/icon/prompts";
-import { analyzeImage, fetchPrompts, generateOneIcon } from "@/lib/icon/client-api";
+import {
+  analyzeImage,
+  composeCollectionPrompt,
+  generateCollectionImage,
+  composeIndividualPrompts,
+  generateOneIcon,
+  generateIconsBatch,
+} from "@/lib/icon/client-api";
 import { readImageFile } from "@/lib/icon/download";
-import { SAMPLE_MANIFEST, SAMPLE_PROMPT_PACK } from "@/lib/icon/fixtures";
-import type { IconManifest, IconPrompt, GeneratedIcon } from "@/types/icon-pipeline";
+import {
+  SAMPLE_MANIFEST,
+  SAMPLE_COLLECTION_PROMPT,
+  SAMPLE_INDIVIDUAL_PROMPTS,
+} from "@/lib/icon/fixtures";
+import type {
+  IconManifest,
+  IndividualIconPrompts,
+  GeneratedIcon,
+} from "@/types/icon-pipeline";
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import GalleryPicker from "@/components/gallery/GalleryPicker";
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Shared bench artifacts — each step's output is lifted here so the next step
+// can consume it. Every step is still independently runnable / rerunnable.
+// ---------------------------------------------------------------------------
+
+type BenchState = {
+  sourceDataUrl: string | null;
+  sourceFileName: string | null;
+  manifest: IconManifest | null;
+  collectionPrompt: string | null;
+  collectionImageDataUrl: string | null;
+  individualPrompts: IndividualIconPrompts | null;
+};
+
+// ---------------------------------------------------------------------------
+// Shared UI primitives
 // ---------------------------------------------------------------------------
 
 function RawJson({ data }: { data: unknown }) {
   return (
     <pre className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-300 font-mono overflow-auto max-h-96 whitespace-pre-wrap break-words">
-      {JSON.stringify(data, null, 2)}
+      {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
     </pre>
   );
 }
@@ -34,23 +65,46 @@ function ErrorMsg({ msg }: { msg: string }) {
   );
 }
 
+function FlowBadge({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={`rounded-md px-2 py-0.5 font-mono text-[11px] ${
+        ok
+          ? "bg-emerald-900/40 text-emerald-300 border border-emerald-700/40"
+          : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+      }`}
+    >
+      {ok ? "✓ " : "• "}
+      {label}
+    </span>
+  );
+}
+
 function SectionCard({
   title,
   num,
+  inputs,
+  output,
   children,
 }: {
   title: string;
   num: number;
+  inputs: string;
+  output: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <span className="text-violet-400 font-mono text-sm font-bold bg-violet-900/30 border border-violet-700/40 rounded-lg px-2 py-0.5">
           §{num}
         </span>
         <h2 className="text-zinc-100 text-lg font-semibold">{title}</h2>
       </div>
+      <p className="text-zinc-500 text-xs font-mono">
+        <span className="text-zinc-400">in:</span> {inputs}{"  "}
+        <span className="text-zinc-400">→ out:</span> {output}
+      </p>
       {children}
     </section>
   );
@@ -60,10 +114,12 @@ function RunButton({
   onClick,
   busy,
   disabled,
+  label = "Run",
 }: {
   onClick: () => void;
   busy: boolean;
   disabled?: boolean;
+  label?: string;
 }) {
   return (
     <button
@@ -78,123 +134,74 @@ function RunButton({
           Running…
         </>
       ) : (
-        "Run"
+        label
       )}
     </button>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Section 1 — Icon Analysis
-// ---------------------------------------------------------------------------
-
-function Section1() {
+// Reusable image input: upload from disk, drop, or pick from the gallery.
+// Reports the chosen data URL up to the parent.
+function ImageInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (dataUrl: string | null, fileName: string | null) => void;
+}) {
   const [dragging, setDragging] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<object | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const loadFile = useCallback(async (f: File) => {
-    setFile(f);
-    setFileName(f.name);
-    setResult(null);
-    setError(null);
-    const { dataUrl: url } = await readImageFile(f);
-    setDataUrl(url);
-    setPreview(url);
-  }, []);
-
-  // Adopt an image selected from the gallery (read-only reference) as the input.
-  const useGalleryImage = useCallback(
-    (img: { dataUrl: string; fileName: string }) => {
-      setFile(null);
-      setFileName(img.fileName);
-      setDataUrl(img.dataUrl);
-      setPreview(img.dataUrl);
-      setResult(null);
-      setError(null);
+  const load = useCallback(
+    async (f: File) => {
+      const { dataUrl } = await readImageFile(f);
+      onChange(dataUrl, f.name);
     },
-    [],
+    [onChange],
   );
-
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragging(false);
-      const f = e.dataTransfer.files[0];
-      if (f && f.type.startsWith("image/")) loadFile(f);
-    },
-    [loadFile],
-  );
-
-  const run = async () => {
-    if (!dataUrl) return;
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      const res = await analyzeImage(dataUrl, fileName ?? undefined);
-      setResult(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
-    <SectionCard title="Icon Analysis" num={1}>
-      {/* Prompt disclosure */}
-      <PromptDisclosure
-        label="View exact prompt sent to vision model"
-        prompt={ICON_ANALYSIS_PROMPT}
-        defaultOpen
-      />
-      <p className="text-zinc-500 text-xs italic">
-        + the uploaded image is sent as image input alongside this prompt
-      </p>
-
-      {/* Input source: upload from computer OR reference the gallery */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-zinc-500">Input image:</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs text-zinc-500">{label}</span>
         <GalleryPicker
-          onPick={(img) => useGalleryImage({ dataUrl: img.dataUrl, fileName: img.fileName })}
+          onPick={(img) => onChange(img.dataUrl, img.fileName)}
           label="Choose from gallery"
           className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
         />
         <span className="text-xs text-zinc-600">or drop / browse below</span>
       </div>
-
-      {/* Dropzone */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const f = e.dataTransfer.files[0];
+          if (f && f.type.startsWith("image/")) load(f);
+        }}
         onClick={() => inputRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+        className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${
           dragging
             ? "border-cyan-500 bg-cyan-950/20"
             : "border-zinc-700 hover:border-zinc-500 bg-zinc-800/30"
         }`}
       >
-        {preview ? (
+        {value ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={preview}
+            src={value}
             alt="preview"
             className="max-h-40 max-w-full rounded-lg object-contain"
           />
         ) : (
           <p className="text-zinc-500 text-sm text-center">
-            Drag & drop an image here, or click to browse
+            Drag &amp; drop an image, or click to browse
           </p>
         )}
         <input
@@ -204,20 +211,94 @@ function Section1() {
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) loadFile(f);
+            if (f) load(f);
           }}
         />
       </div>
+    </div>
+  );
+}
 
-      {fileName && (
-        <p className="text-zinc-400 text-xs font-mono">
-          {fileName}
-          {file ? ` (${Math.round(file.size / 1024)} KB)` : " (from gallery)"}
-        </p>
-      )}
+// JSON textarea with live parse feedback.
+function JsonEditor<T>({
+  label,
+  text,
+  onTextChange,
+  parseError,
+}: {
+  label: string;
+  text: string;
+  onTextChange: (text: string) => void;
+  parseError: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+        {label}
+      </label>
+      <textarea
+        value={text}
+        onChange={(e) => onTextChange(e.target.value)}
+        rows={12}
+        spellCheck={false}
+        className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+      />
+      {parseError && <p className="text-red-400 text-xs">{parseError}</p>}
+    </div>
+  );
+}
 
-      <RunButton onClick={run} busy={busy} disabled={!dataUrl} />
+// ---------------------------------------------------------------------------
+// §1 — Analyze
+// ---------------------------------------------------------------------------
 
+function Section1({
+  state,
+  patch,
+}: {
+  state: BenchState;
+  patch: (p: Partial<BenchState>) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<IconManifest | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    if (!state.sourceDataUrl) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { manifest } = await analyzeImage(
+        state.sourceDataUrl,
+        state.sourceFileName ?? undefined,
+      );
+      setResult(manifest);
+      patch({ manifest });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard title="Analyze" num={1} inputs="source image" output="icon manifest JSON">
+      <PromptDisclosure
+        label="View exact prompt sent to vision model"
+        prompt={ICON_ANALYSIS_PROMPT}
+      />
+      <p className="text-zinc-500 text-xs italic">
+        + the source image is sent as image input alongside this prompt
+      </p>
+      <ImageInput
+        label="Source image:"
+        value={state.sourceDataUrl}
+        onChange={(dataUrl, fileName) =>
+          patch({ sourceDataUrl: dataUrl, sourceFileName: fileName })
+        }
+      />
+      <RunButton onClick={run} busy={busy} disabled={!state.sourceDataUrl} />
       {error && <ErrorMsg msg={error} />}
       {result && <RawJson data={result} />}
     </SectionCard>
@@ -225,26 +306,39 @@ function Section1() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 2 — Prompt Pack
+// §2 — Compose collection prompt
 // ---------------------------------------------------------------------------
 
-function Section2() {
-  const [manifestText, setManifestText] = useState(
-    () => JSON.stringify(SAMPLE_MANIFEST, null, 2),
+function Section2({
+  state,
+  patch,
+}: {
+  state: BenchState;
+  patch: (p: Partial<BenchState>) => void;
+}) {
+  const [manifestText, setManifestText] = useState(() =>
+    JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
+  );
+  const [parsed, setParsed] = useState<IconManifest>(
+    state.manifest ?? SAMPLE_MANIFEST,
   );
   const [parseError, setParseError] = useState<string | null>(null);
-  const [parsed, setParsed] = useState<IconManifest>(SAMPLE_MANIFEST);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<object | null>(null);
+  const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const resolvedPrompt = buildPromptPackPrompt(parsed.iconFamilyStyle, manifestText);
+  const syncFromState = () => {
+    if (!state.manifest) return;
+    const text = JSON.stringify(state.manifest, null, 2);
+    setManifestText(text);
+    setParsed(state.manifest);
+    setParseError(null);
+  };
 
   const handleChange = (text: string) => {
     setManifestText(text);
     try {
-      const p = JSON.parse(text) as IconManifest;
-      setParsed(p);
+      setParsed(JSON.parse(text) as IconManifest);
       setParseError(null);
     } catch {
       setParseError("Invalid JSON — fix before running.");
@@ -257,8 +351,9 @@ function Section2() {
     setError(null);
     setResult(null);
     try {
-      const res = await fetchPrompts(parsed);
-      setResult(res);
+      const { collectionPrompt } = await composeCollectionPrompt(parsed);
+      setResult(collectionPrompt);
+      patch({ collectionPrompt });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -267,30 +362,30 @@ function Section2() {
   };
 
   return (
-    <SectionCard title="Prompt Pack" num={2}>
-      {/* Live-resolved prompt disclosure */}
+    <SectionCard
+      title="Compose collection prompt"
+      num={2}
+      inputs="icon manifest JSON"
+      output="collection image prompt (text)"
+    >
       <PromptDisclosure
-        label="View exact prompt sent to prompt-writer model (live)"
-        prompt={resolvedPrompt}
-        defaultOpen
+        label="View exact prompt sent to composer (live)"
+        prompt={buildCollectionPromptComposer(manifestText)}
       />
-
-      <div className="flex flex-col gap-1.5">
-        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
-          Icon Manifest JSON (editable)
-        </label>
-        <textarea
-          value={manifestText}
-          onChange={(e) => handleChange(e.target.value)}
-          rows={14}
-          spellCheck={false}
-          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
-        />
-        {parseError && <p className="text-red-400 text-xs">{parseError}</p>}
-      </div>
-
+      <button
+        onClick={syncFromState}
+        disabled={!state.manifest}
+        className="self-start text-xs text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        ↑ pull manifest from §1
+      </button>
+      <JsonEditor
+        label="Icon Manifest JSON (editable)"
+        text={manifestText}
+        onTextChange={handleChange}
+        parseError={parseError}
+      />
       <RunButton onClick={run} busy={busy} disabled={!!parseError} />
-
       {error && <ErrorMsg msg={error} />}
       {result && <RawJson data={result} />}
     </SectionCard>
@@ -298,58 +393,62 @@ function Section2() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 3 — Single Icon
+// §3 — Generate collection image (contact sheet)
 // ---------------------------------------------------------------------------
 
-function Section3() {
-  const icons = SAMPLE_MANIFEST.icons;
-  const [selectedId, setSelectedId] = useState(icons[0].id);
-  const [promptText, setPromptText] = useState<string>(() => {
-    const match = SAMPLE_PROMPT_PACK.prompts.find(
-      (p) => p.iconId === icons[0].id,
-    );
-    return match?.prompt ?? "";
-  });
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ generatedIcon: GeneratedIcon } | null>(
-    null,
+function Section3({
+  state,
+  patch,
+}: {
+  state: BenchState;
+  patch: (p: Partial<BenchState>) => void;
+}) {
+  const [manifestText, setManifestText] = useState(() =>
+    JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
   );
+  const [parsed, setParsed] = useState<IconManifest>(
+    state.manifest ?? SAMPLE_MANIFEST,
+  );
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [promptText, setPromptText] = useState(
+    state.collectionPrompt ?? SAMPLE_COLLECTION_PROMPT,
+  );
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // When the select changes, prefill from SAMPLE_PROMPT_PACK
-  const handleSelectChange = (id: string) => {
-    setSelectedId(id);
-    const match = SAMPLE_PROMPT_PACK.prompts.find((p) => p.iconId === id);
-    setPromptText(match?.prompt ?? "");
-    setResult(null);
-    setError(null);
+  const handleManifest = (text: string) => {
+    setManifestText(text);
+    try {
+      setParsed(JSON.parse(text) as IconManifest);
+      setParseError(null);
+    } catch {
+      setParseError("Invalid JSON — fix before running.");
+    }
   };
 
-  const selectedIcon = icons.find((i) => i.id === selectedId)!;
-  const samplePromptEntry = SAMPLE_PROMPT_PACK.prompts.find(
-    (p) => p.iconId === selectedId,
-  )!;
-
-  const resolvedPrompt = buildIconGenerationPrompt(
-    SAMPLE_MANIFEST.iconFamilyStyle,
-    promptText,
-  );
+  const pull = () => {
+    if (state.manifest) {
+      setManifestText(JSON.stringify(state.manifest, null, 2));
+      setParsed(state.manifest);
+      setParseError(null);
+    }
+    if (state.collectionPrompt) setPromptText(state.collectionPrompt);
+  };
 
   const run = async () => {
+    if (parseError || !state.sourceDataUrl) return;
     setBusy(true);
     setError(null);
     setResult(null);
-    const iconPrompt: IconPrompt = {
-      ...samplePromptEntry,
-      prompt: promptText,
-    };
     try {
-      const res = await generateOneIcon({
-        icon: selectedIcon,
-        prompt: iconPrompt,
-        iconFamilyStyle: SAMPLE_MANIFEST.iconFamilyStyle,
+      const { collectionImage } = await generateCollectionImage({
+        sourceImageBase64: state.sourceDataUrl,
+        manifest: parsed,
+        collectionPrompt: promptText,
       });
-      setResult(res);
+      setResult(collectionImage.imageUrl);
+      patch({ collectionImageDataUrl: collectionImage.imageUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -358,33 +457,263 @@ function Section3() {
   };
 
   return (
-    <SectionCard title="Single Icon Generation" num={3}>
-      {/* Live-resolved prompt disclosure */}
+    <SectionCard
+      title="Generate collection image"
+      num={3}
+      inputs="source image + manifest + collection prompt"
+      output="contact sheet image"
+    >
       <PromptDisclosure
-        label="View full prompt sent to image model (live — this is the wrapper actually sent)"
-        prompt={resolvedPrompt}
-        defaultOpen
+        label="View exact body sent to image model (live)"
+        prompt={buildCollectionImageBody(manifestText, promptText)}
       />
+      <button
+        onClick={pull}
+        className="self-start text-xs text-cyan-400/80 hover:text-cyan-300"
+      >
+        ↑ pull manifest from §1 + prompt from §2
+      </button>
+      <ImageInput
+        label="Source image (reference):"
+        value={state.sourceDataUrl}
+        onChange={(dataUrl, fileName) =>
+          patch({ sourceDataUrl: dataUrl, sourceFileName: fileName })
+        }
+      />
+      <div className="flex flex-col gap-1.5">
+        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+          Collection prompt (editable)
+        </label>
+        <textarea
+          value={promptText}
+          onChange={(e) => setPromptText(e.target.value)}
+          rows={5}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+        />
+      </div>
+      <JsonEditor
+        label="Icon Manifest JSON (editable)"
+        text={manifestText}
+        onTextChange={handleManifest}
+        parseError={parseError}
+      />
+      <RunButton
+        onClick={run}
+        busy={busy}
+        disabled={!!parseError || !state.sourceDataUrl}
+      />
+      {!state.sourceDataUrl && (
+        <p className="text-zinc-500 text-xs">Provide a source image first.</p>
+      )}
+      {error && <ErrorMsg msg={error} />}
+      {result && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={result}
+          alt="contact sheet"
+          className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-950"
+        />
+      )}
+    </SectionCard>
+  );
+}
 
-      {/* Icon selector */}
+// ---------------------------------------------------------------------------
+// §4 — Compose individual prompts
+// ---------------------------------------------------------------------------
+
+function Section4({
+  state,
+  patch,
+}: {
+  state: BenchState;
+  patch: (p: Partial<BenchState>) => void;
+}) {
+  const [manifestText, setManifestText] = useState(() =>
+    JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
+  );
+  const [parsed, setParsed] = useState<IconManifest>(
+    state.manifest ?? SAMPLE_MANIFEST,
+  );
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<IndividualIconPrompts | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleManifest = (text: string) => {
+    setManifestText(text);
+    try {
+      setParsed(JSON.parse(text) as IconManifest);
+      setParseError(null);
+    } catch {
+      setParseError("Invalid JSON — fix before running.");
+    }
+  };
+
+  const pull = () => {
+    if (state.manifest) {
+      setManifestText(JSON.stringify(state.manifest, null, 2));
+      setParsed(state.manifest);
+      setParseError(null);
+    }
+  };
+
+  const run = async () => {
+    if (parseError || !state.collectionImageDataUrl) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { individualPrompts } = await composeIndividualPrompts({
+        collectionImageBase64: state.collectionImageDataUrl,
+        manifest: parsed,
+      });
+      setResult(individualPrompts);
+      patch({ individualPrompts });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="Compose individual prompts"
+      num={4}
+      inputs="contact sheet + manifest"
+      output="sharedStylePrompt + one prompt per icon"
+    >
+      <PromptDisclosure
+        label="View exact prompt sent to composer (live)"
+        prompt={buildIndividualPromptComposer(manifestText)}
+      />
+      <p className="text-zinc-500 text-xs italic">
+        + the contact sheet (§3) is sent as image input alongside this prompt
+      </p>
+      <button
+        onClick={pull}
+        disabled={!state.manifest}
+        className="self-start text-xs text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        ↑ pull manifest from §1
+      </button>
+      <ImageInput
+        label="Contact sheet (style reference):"
+        value={state.collectionImageDataUrl}
+        onChange={(dataUrl) => patch({ collectionImageDataUrl: dataUrl })}
+      />
+      <JsonEditor
+        label="Icon Manifest JSON (editable)"
+        text={manifestText}
+        onTextChange={handleManifest}
+        parseError={parseError}
+      />
+      <RunButton
+        onClick={run}
+        busy={busy}
+        disabled={!!parseError || !state.collectionImageDataUrl}
+      />
+      {!state.collectionImageDataUrl && (
+        <p className="text-zinc-500 text-xs">Generate or provide a contact sheet first (§3).</p>
+      )}
+      {error && <ErrorMsg msg={error} />}
+      {result && <RawJson data={result} />}
+    </SectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// §5 — Generate one icon
+// ---------------------------------------------------------------------------
+
+function Section5({ state }: { state: BenchState }) {
+  const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
+  const [selectedId, setSelectedId] = useState(prompts.iconPrompts[0]?.iconId);
+  const [sharedStyle, setSharedStyle] = useState(prompts.sharedStylePrompt);
+  const selected =
+    prompts.iconPrompts.find((p) => p.iconId === selectedId) ??
+    prompts.iconPrompts[0];
+  const [promptText, setPromptText] = useState(selected?.prompt ?? "");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<GeneratedIcon | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSelect = (id: string) => {
+    setSelectedId(id);
+    const match = prompts.iconPrompts.find((p) => p.iconId === id);
+    setPromptText(match?.prompt ?? "");
+    setResult(null);
+    setError(null);
+  };
+
+  const resolvedWrapper = buildIconGenerationWrapper({
+    sharedStylePrompt: sharedStyle,
+    iconName: selected?.iconName ?? "",
+    iconConcept: selected?.concept ?? "",
+    iconPrompt: promptText,
+  });
+
+  const run = async () => {
+    if (!state.collectionImageDataUrl || !selected) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { generatedIcon } = await generateOneIcon({
+        collectionImageBase64: state.collectionImageDataUrl,
+        sharedStylePrompt: sharedStyle,
+        iconPrompt: { ...selected, prompt: promptText },
+      });
+      setResult(generatedIcon);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="Generate one icon"
+      num={5}
+      inputs="contact sheet + sharedStylePrompt + one icon prompt"
+      output="single icon image"
+    >
+      <PromptDisclosure
+        label="View full wrapper sent to image model (live)"
+        prompt={resolvedWrapper}
+      />
+      <p className="text-zinc-500 text-xs italic">
+        + the contact sheet (§3) is attached as the style reference
+      </p>
       <div className="flex flex-col gap-1.5">
         <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
           Pick an icon
         </label>
         <select
           value={selectedId}
-          onChange={(e) => handleSelectChange(e.target.value)}
+          onChange={(e) => onSelect(e.target.value)}
           className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
         >
-          {icons.map((icon) => (
-            <option key={icon.id} value={icon.id}>
-              {icon.name} ({icon.id})
+          {prompts.iconPrompts.map((p) => (
+            <option key={p.iconId} value={p.iconId}>
+              {p.iconName} ({p.iconId})
             </option>
           ))}
         </select>
       </div>
-
-      {/* Editable prompt */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+          sharedStylePrompt (editable)
+        </label>
+        <textarea
+          value={sharedStyle}
+          onChange={(e) => setSharedStyle(e.target.value)}
+          rows={3}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+        />
+      </div>
       <div className="flex flex-col gap-1.5">
         <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
           Icon-specific prompt (editable)
@@ -396,17 +725,18 @@ function Section3() {
           className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
         />
       </div>
-
-      <RunButton onClick={run} busy={busy} />
-
+      <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
+      {!state.collectionImageDataUrl && (
+        <p className="text-zinc-500 text-xs">A contact sheet (§3) is required as the reference.</p>
+      )}
       {error && <ErrorMsg msg={error} />}
       {result && (
         <div className="flex flex-col gap-3">
-          {result.generatedIcon?.imageUrl && (
+          {result.imageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={result.generatedIcon.imageUrl}
-              alt={result.generatedIcon.iconName}
+              src={result.imageUrl}
+              alt={result.iconName}
               className="w-32 h-32 rounded-xl border border-zinc-700 object-contain bg-zinc-800/50"
             />
           )}
@@ -418,34 +748,26 @@ function Section3() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 4 — Batch
+// §6 — Generate batch
 // ---------------------------------------------------------------------------
 
-function Section4() {
+function Section6({ state }: { state: BenchState }) {
+  const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<GeneratedIcon[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
+    if (!state.collectionImageDataUrl) return;
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const res = await fetch("/api/generate-icons-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          manifest: SAMPLE_MANIFEST,
-          promptPack: SAMPLE_PROMPT_PACK,
-        }),
+      const { generatedIcons } = await generateIconsBatch({
+        collectionImageBase64: state.collectionImageDataUrl,
+        individualPrompts: prompts,
       });
-      const data = (await res.json()) as Record<string, unknown>;
-      if (!res.ok) {
-        throw new Error(
-          typeof data.error === "string" ? data.error : "Request failed.",
-        );
-      }
-      setResult(data);
+      setResult(generatedIcons);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -453,29 +775,57 @@ function Section4() {
     }
   };
 
-  const iconCount = Array.isArray(result?.generatedIcons)
-    ? (result.generatedIcons as unknown[]).length
-    : null;
+  const okCount = result?.filter((g) => g.status === "success").length ?? 0;
 
   return (
-    <SectionCard title="Batch Icon Generation" num={4}>
+    <SectionCard
+      title="Generate batch"
+      num={6}
+      inputs="contact sheet + all icon prompts"
+      output="all generated icons"
+    >
       <p className="text-zinc-400 text-sm">
-        POSTs <code className="text-cyan-400 font-mono text-xs">/api/generate-icons-batch</code>{" "}
-        with <code className="text-cyan-400 font-mono text-xs">SAMPLE_MANIFEST</code> +{" "}
-        <code className="text-cyan-400 font-mono text-xs">SAMPLE_PROMPT_PACK</code> ({SAMPLE_MANIFEST.icons.length} icons).
-        The server builds per-icon wrapped prompts internally via{" "}
-        <code className="text-cyan-400 font-mono text-xs">buildIconGenerationPrompt</code>.
+        Generates every icon in{" "}
+        {state.individualPrompts ? "§4's output" : "the sample prompt set"} (
+        {prompts.iconPrompts.length} icons), each using the contact sheet as the
+        reference.
       </p>
-
-      <RunButton onClick={run} busy={busy} />
-
-      {error && <ErrorMsg msg={error} />}
-      {iconCount !== null && (
-        <p className="text-cyan-400 text-sm font-mono">
-          Returned {iconCount} generated icon{iconCount !== 1 ? "s" : ""}.
-        </p>
+      <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
+      {!state.collectionImageDataUrl && (
+        <p className="text-zinc-500 text-xs">A contact sheet (§3) is required as the reference.</p>
       )}
-      {result && <RawJson data={result} />}
+      {error && <ErrorMsg msg={error} />}
+      {result && (
+        <>
+          <p className="text-cyan-400 text-sm font-mono">
+            {okCount}/{result.length} succeeded.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {result.map((g) => (
+              <div
+                key={g.id}
+                className="bg-zinc-950 border border-zinc-800 rounded-xl p-2 flex flex-col gap-2"
+              >
+                <div className="aspect-square flex items-center justify-center bg-zinc-900 rounded-lg">
+                  {g.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={g.imageUrl}
+                      alt={g.iconName}
+                      className="w-full h-full object-contain p-2"
+                    />
+                  ) : (
+                    <span className="text-red-400 text-xs px-2 text-center">
+                      {g.error ?? "failed"}
+                    </span>
+                  )}
+                </div>
+                <span className="text-zinc-300 text-xs truncate">{g.iconName}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </SectionCard>
   );
 }
@@ -485,10 +835,23 @@ function Section4() {
 // ---------------------------------------------------------------------------
 
 export default function BenchPage() {
+  const [state, setState] = useState<BenchState>({
+    sourceDataUrl: null,
+    sourceFileName: null,
+    manifest: null,
+    collectionPrompt: null,
+    collectionImageDataUrl: null,
+    individualPrompts: null,
+  });
+
+  const patch = useCallback(
+    (p: Partial<BenchState>) => setState((s) => ({ ...s, ...p })),
+    [],
+  );
+
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-10">
       <div className="max-w-4xl mx-auto flex flex-col gap-8">
-        {/* Title */}
         <div className="flex flex-col gap-1">
           <Link
             href="/"
@@ -496,19 +859,29 @@ export default function BenchPage() {
           >
             ← back to app
           </Link>
-          <h1 className="mt-1 text-2xl font-bold text-zinc-100">
-            Test Bench
-          </h1>
+          <h1 className="mt-1 text-2xl font-bold text-zinc-100">Test Bench</h1>
           <p className="text-zinc-500 text-sm">
-            Developer endpoint tester for the Asset Arsenal icon pipeline.
-            Each section shows the <span className="text-cyan-400">exact resolved prompt</span> before you run.
+            Each step in the icon pipeline as an independent, rerunnable
+            breakpoint. Edit any input, view the{" "}
+            <span className="text-cyan-400">exact resolved prompt</span> before
+            you run, and feed each step&apos;s output into the next.
           </p>
+          {/* Artifact flow indicator */}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <FlowBadge ok={!!state.sourceDataUrl} label="source" />
+            <FlowBadge ok={!!state.manifest} label="manifest" />
+            <FlowBadge ok={!!state.collectionPrompt} label="collection prompt" />
+            <FlowBadge ok={!!state.collectionImageDataUrl} label="contact sheet" />
+            <FlowBadge ok={!!state.individualPrompts} label="icon prompts" />
+          </div>
         </div>
 
-        <Section1 />
-        <Section2 />
-        <Section3 />
-        <Section4 />
+        <Section1 state={state} patch={patch} />
+        <Section2 state={state} patch={patch} />
+        <Section3 state={state} patch={patch} />
+        <Section4 state={state} patch={patch} />
+        <Section5 state={state} />
+        <Section6 state={state} />
       </div>
     </main>
   );

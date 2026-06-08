@@ -1,68 +1,63 @@
 import type {
   IconManifest,
-  IconPromptPack,
+  IndividualIconPrompts,
   GeneratedIcon,
 } from "@/types/icon-pipeline";
 
-// Sample data so UI components can be built/previewed without live API calls.
-// Not used in production paths.
+// Sample data so the bench and any UI can be exercised without re-running
+// every upstream step. Not used in production paths.
 
 export const SAMPLE_MANIFEST: IconManifest = {
-  imageSummary:
-    "A dark developer-tool dashboard with metric cards and a left nav rail.",
   iconCount: 3,
-  iconFamilyStyle: {
-    summary:
-      "Premium dark SaaS icon family: rounded geometric linework with cyan/violet glow accents.",
-    colorPalette: ["#0b0f1a", "#22d3ee", "#a78bfa", "#e2e8f0"],
-    lineStyle: "2px rounded strokes, consistent corner radius",
-    shapeLanguage: "geometric, slightly rounded, balanced negative space",
-    glowStyle: "subtle outer cyan/violet glow",
-    backgroundRule: "transparent, no background fill",
-    negativeRules: ["no text", "no letters", "no UI chrome", "no drop shadows"],
+  sharedIconFamilyStyle: {
+    colorPalette: ["cyan / electric blue", "violet / purple", "white on dark navy"],
+    lineStyle: "thin-to-medium monoline outline with rounded caps and joins",
+    shapeLanguage: "simple geometric SaaS dashboard glyphs, compact silhouettes",
+    glowStyle: "subtle neon glow and soft bloom on cyan/violet accents",
+    backgroundRule: "designed for dark navy glass UI surfaces",
+    negativeRules: ["no heavy strokes", "no skeuomorphic detail", "no text"],
   },
   icons: [
     {
       id: "icon_001",
-      name: "Token Usage",
-      meaning: "Represents AI/token usage metric",
-      locationInImage: "Top-left metric card",
-      visualDescription: "A coin/chip glyph with a small spark",
-      styleNotes: "cyan glow, rounded linework",
+      name: "Hexagon token",
+      concept: "tokens / AI usage",
+      whereVisible: "Top-left metric tile",
+      visualDescription: "Cyan outlined hexagon",
       confidence: "high",
     },
     {
       id: "icon_002",
-      name: "Latency",
-      meaning: "Response time metric",
-      locationInImage: "Top-center metric card",
-      visualDescription: "A stopwatch with a motion arc",
-      styleNotes: "violet accent",
-      confidence: "medium",
+      name: "Clock",
+      concept: "duration / time",
+      whereVisible: "Top-center metric tile",
+      visualDescription: "Circular clock outline with two hands",
+      confidence: "high",
     },
     {
       id: "icon_003",
-      name: "Settings",
-      meaning: "App configuration",
-      locationInImage: "Bottom of left nav rail",
-      visualDescription: "A gear glyph",
-      styleNotes: "neutral light stroke",
+      name: "Code brackets",
+      concept: "commits / development",
+      whereVisible: "Commits metric tile",
+      visualDescription: "Angled code brackets with a slash",
       confidence: "high",
     },
   ],
-  notes: ["Repeated chevron decorations were ignored as non-icons."],
+  excludedAsNonIcons: ["color swatches", "glass card surfaces", "chart bars"],
 };
 
-export const SAMPLE_PROMPT_PACK: IconPromptPack = {
-  sharedStyleSummary:
-    "Premium dark developer-tool icon family with rounded geometric linework and cyan/violet glow.",
-  prompts: SAMPLE_MANIFEST.icons.map((icon) => ({
+export const SAMPLE_COLLECTION_PROMPT =
+  "Create a polished icon collection contact sheet showing a unified family of premium dark-mode SaaS/developer-dashboard icons on a dark navy background. Render thin-to-medium monoline outline glyphs with rounded caps and joins, cyan and violet neon accents, subtle glow. Arrange a cyan outlined hexagon, a circular clock, and angled code brackets in a clean evenly-spaced grid. No text, no labels, no UI clutter, consistent stroke weight and glow across all icons.";
+
+export const SAMPLE_INDIVIDUAL_PROMPTS: IndividualIconPrompts = {
+  sharedStylePrompt:
+    "Create a single standalone icon in a premium dark-mode SaaS/developer-dashboard icon family style. 1:1 square, centered, generous padding, thin-to-medium monoline strokes, rounded caps and joins, cyan/violet neon accents with subtle glow on a dark navy or transparent-friendly background. No text, no numbers, no UI chrome.",
+  iconPrompts: SAMPLE_MANIFEST.icons.map((icon, i) => ({
     iconId: icon.id,
     iconName: icon.name,
-    prompt: `Create a single isolated icon representing ${icon.meaning.toLowerCase()}. Premium dark developer-tool style, rounded geometric linework, cyan and violet glow accents, centered, transparent background. No text, no letters, no UI.`,
-    aspectRatio: "1:1",
-    recommendedModel: "gpt-image-1-mini",
-    notes: null,
+    concept: icon.concept,
+    contactSheetReference: `row 1, column ${i + 1}`,
+    prompt: `Create one standalone ${icon.name.toLowerCase()} icon in 1:1 square format representing ${icon.concept}. ${icon.visualDescription}. Centered with generous padding, thin-to-medium monoline strokes, subtle neon glow, dark navy or transparent-friendly background. Generate one icon only; no text, no numbers, no extra decoration.`,
   })),
 };
 
@@ -71,7 +66,7 @@ export const SAMPLE_GENERATED_ICONS: GeneratedIcon[] =
     id: `gen_${icon.id}`,
     iconId: icon.id,
     iconName: icon.name,
-    prompt: SAMPLE_PROMPT_PACK.prompts[i].prompt,
+    prompt: SAMPLE_INDIVIDUAL_PROMPTS.iconPrompts[i].prompt,
     imageUrl: "",
     modelUsed: "gpt-image-1-mini",
     status: i === 1 ? "failed" : "success",

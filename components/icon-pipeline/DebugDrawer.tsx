@@ -103,14 +103,39 @@ export default function DebugDrawer({ run }: DebugDrawerProps) {
               </pre>
             </section>
 
-            {/* Prompt pack */}
+            {/* Collection prompt */}
             <section>
               <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">
-                Prompt Pack
+                Collection Prompt
+              </p>
+              <pre className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 text-xs text-zinc-300 font-mono overflow-auto max-h-48 whitespace-pre-wrap break-words">
+                {run.collectionPrompt ?? "null"}
+              </pre>
+            </section>
+
+            {/* Contact sheet */}
+            {run.collectionImage?.imageUrl && (
+              <section>
+                <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">
+                  Contact Sheet
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={run.collectionImage.imageUrl}
+                  alt="contact sheet"
+                  className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-900"
+                />
+              </section>
+            )}
+
+            {/* Individual prompts */}
+            <section>
+              <p className="text-zinc-500 text-xs font-medium uppercase tracking-wide mb-2">
+                Individual Prompts
               </p>
               <pre className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 text-xs text-zinc-300 font-mono overflow-auto max-h-64">
-                {run.promptPack
-                  ? JSON.stringify(run.promptPack, null, 2)
+                {run.individualPrompts
+                  ? JSON.stringify(run.individualPrompts, null, 2)
                   : "null"}
               </pre>
             </section>

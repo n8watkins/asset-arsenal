@@ -1,21 +1,39 @@
-import type { GenerateIconRequest, GeneratedIcon } from "@/types/icon-pipeline";
+import type {
+  GeneratedIcon,
+  GenerateOneRequest,
+} from "@/types/icon-pipeline";
 import { IconPipelineError } from "@/lib/icon/errors";
-import { buildIconGenerationPrompt } from "@/lib/icon/prompts";
+import { buildIconGenerationWrapper } from "@/lib/icon/prompts";
 import { MODEL_ROLES } from "@/lib/icon/models";
 import { getClient } from "./client";
+import { imageBase64ToFile } from "./to-file";
 
+/**
+ * Step 5 — generate one standalone icon.
+ *
+ * The contact sheet is passed as the visual style reference (via images.edit)
+ * alongside the wrapped per-icon prompt, so each icon matches the family.
+ */
 export async function generateIcon(
-  args: GenerateIconRequest,
+  args: GenerateOneRequest,
 ): Promise<GeneratedIcon> {
   const client = getClient();
-  const wrappedPrompt = buildIconGenerationPrompt(
-    args.iconFamilyStyle,
-    args.prompt.prompt,
-  );
+  const wrappedPrompt = buildIconGenerationWrapper({
+    sharedStylePrompt: args.sharedStylePrompt,
+    iconName: args.iconPrompt.iconName,
+    iconConcept: args.iconPrompt.concept,
+    iconPrompt: args.iconPrompt.prompt,
+  });
 
   try {
-    const res = await client.images.generate({
+    const contactSheet = await imageBase64ToFile(
+      args.collectionImageBase64,
+      "contact-sheet.png",
+    );
+
+    const res = await client.images.edit({
       model: MODEL_ROLES.imageGeneratorModel,
+      image: contactSheet,
       prompt: wrappedPrompt,
       n: 1,
       size: "1024x1024",
@@ -30,9 +48,9 @@ export async function generateIcon(
 
     return {
       id: crypto.randomUUID(),
-      iconId: args.icon.id,
-      iconName: args.icon.name,
-      prompt: args.prompt.prompt,
+      iconId: args.iconPrompt.iconId,
+      iconName: args.iconPrompt.iconName,
+      prompt: wrappedPrompt,
       imageUrl: `data:image/png;base64,${b64}`,
       modelUsed: MODEL_ROLES.imageGeneratorModel,
       status: "success",
@@ -55,7 +73,7 @@ export async function generateIcon(
  * of throwing — used by the batch route for partial-failure tolerance.
  */
 export async function generateIconSafe(
-  args: GenerateIconRequest,
+  args: GenerateOneRequest,
 ): Promise<GeneratedIcon> {
   try {
     return await generateIcon(args);
@@ -64,9 +82,9 @@ export async function generateIconSafe(
       err instanceof Error ? err.message : "Icon generation failed.";
     return {
       id: crypto.randomUUID(),
-      iconId: args.icon.id,
-      iconName: args.icon.name,
-      prompt: args.prompt.prompt,
+      iconId: args.iconPrompt.iconId,
+      iconName: args.iconPrompt.iconName,
+      prompt: args.iconPrompt.prompt,
       imageUrl: "",
       modelUsed: MODEL_ROLES.imageGeneratorModel,
       status: "failed",

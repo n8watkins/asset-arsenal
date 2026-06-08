@@ -1,13 +1,17 @@
-// Client-side typed fetch wrappers for the pipeline API routes (PRD §14).
+// Client-side typed fetch wrappers for the six pipeline API routes.
 // Each throws Error(<friendly message>) on non-2xx so callers can route the
 // message into the pipeline's error state.
 
 import type {
-  IconAnalysisResponse,
-  IconPromptsResponse,
-  GenerateIconResponse,
-  GenerateIconRequest,
+  AnalyzeResponse,
+  ComposeCollectionPromptResponse,
+  GenerateCollectionImageResponse,
+  ComposeIndividualPromptsResponse,
+  GenerateOneResponse,
+  GenerateBatchResponse,
   IconManifest,
+  IndividualIconPrompt,
+  IndividualIconPrompts,
 } from "@/types/icon-pipeline";
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
@@ -30,17 +34,58 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+// Step 1
 export function analyzeImage(imageBase64: string, fileName?: string) {
-  return postJSON<IconAnalysisResponse>("/api/icon-analysis", {
+  return postJSON<AnalyzeResponse>("/api/icons/analyze", {
     imageBase64,
     fileName,
   });
 }
 
-export function fetchPrompts(manifest: IconManifest) {
-  return postJSON<IconPromptsResponse>("/api/icon-prompts", { manifest });
+// Step 2
+export function composeCollectionPrompt(manifest: IconManifest) {
+  return postJSON<ComposeCollectionPromptResponse>(
+    "/api/icons/compose-collection-prompt",
+    { manifest },
+  );
 }
 
-export function generateOneIcon(req: GenerateIconRequest) {
-  return postJSON<GenerateIconResponse>("/api/generate-icon", req);
+// Step 3
+export function generateCollectionImage(args: {
+  sourceImageBase64: string;
+  manifest: IconManifest;
+  collectionPrompt: string;
+}) {
+  return postJSON<GenerateCollectionImageResponse>(
+    "/api/icons/generate-collection-image",
+    args,
+  );
+}
+
+// Step 4
+export function composeIndividualPrompts(args: {
+  collectionImageBase64: string;
+  manifest: IconManifest;
+}) {
+  return postJSON<ComposeIndividualPromptsResponse>(
+    "/api/icons/compose-individual-prompts",
+    args,
+  );
+}
+
+// Step 5 (single)
+export function generateOneIcon(args: {
+  collectionImageBase64: string;
+  sharedStylePrompt: string;
+  iconPrompt: IndividualIconPrompt;
+}) {
+  return postJSON<GenerateOneResponse>("/api/icons/generate-one", args);
+}
+
+// Step 5 (batch)
+export function generateIconsBatch(args: {
+  collectionImageBase64: string;
+  individualPrompts: IndividualIconPrompts;
+}) {
+  return postJSON<GenerateBatchResponse>("/api/icons/generate-batch", args);
 }

@@ -1,137 +1,130 @@
-# Asset Arsenal — API Contract Memo (WP0)
+# Asset Arsenal — API Contract
 
-This is the single source of truth for how we call OpenAI and structure Next.js
-route handlers. All work packages code against this. Verified against the
-installed SDKs on the scaffold commit:
+The single source of truth for how we call OpenAI and structure the Next.js
+route handlers. All steps code against this. Verified against the installed
+SDKs: `next@16.2.7`, `openai@6.42.0`, `zod@^4.4.3`, React 19, Node 22.
 
-- `next@16.2.7`, `openai@6.42.0`, `zod@^4.4.3`, React 19, Node 22.
+> ⚠️ **Live-call status:** `OPENAI_API_KEY` in `.env.local` is currently
+> **empty**. Everything below is verified at the **type / SDK level**, not
+> against the live API. Model IDs (`gpt-5.4-mini`, `gpt-5.4-nano`,
+> `gpt-image-1-mini`) are the intended defaults; if the API rejects an ID at
+> runtime, fix it in `lib/icon/models.ts` ONLY.
 
-> ⚠️ **Live-call status:** `OPENAI_API_KEY` in `.env.local` is currently **empty**.
-> Everything below is verified at the **type / SDK level**, not against the live
-> API. The first real smoke test happens once a real `sk-...` key is set. Treat
-> model IDs (`gpt-5.4-mini`, `gpt-5.4-nano`) as the intended defaults; if the API
-> rejects an ID at runtime, fix it in `lib/icon/models.ts` ONLY (one place).
+## The pipeline — a 6-step artifact chain
+
+The app is the memory layer; each step explicitly passes the artifacts the next
+one needs. The **contact sheet** (collection image) is the visual style anchor:
+steps 4 and 5 pass it back to the model as a reference image.
+
+```
+sourceImage
+  ↓  /api/icons/analyze                       (vision)
+iconManifest
+  ↓  /api/icons/compose-collection-prompt     (text)
+collectionPrompt
+  ↓  /api/icons/generate-collection-image     (images.edit, source as reference)
+collectionImage (contact sheet)
+  ↓  /api/icons/compose-individual-prompts    (vision, contact sheet as input)
+individualPrompts { sharedStylePrompt, iconPrompts[] }
+  ↓  /api/icons/generate-one | generate-batch (images.edit, contact sheet as reference)
+generatedIcons[]
+```
 
 ## Model roles (lib/icon/models.ts)
 
 ```ts
 export const MODEL_ROLES = {
-  visionAnalyzerModel: "gpt-5.4-mini",   // image  -> manifest JSON
-  promptWriterModel:   "gpt-5.4-nano",   // manifest -> prompt pack JSON
-  imageGeneratorModel: "gpt-image-1-mini", // prompt -> icon image
+  visionAnalyzerModel:   "gpt-5.4-mini",    // step 1: image      -> manifest JSON
+  collectionPromptModel: "gpt-5.4-nano",    // step 2: manifest   -> collection prompt (text)
+  collectionImageModel:  "gpt-image-1-mini",// step 3: src+prompt -> contact sheet
+  individualPromptModel: "gpt-5.4-mini",    // step 4: sheet+manifest -> prompts JSON (vision)
+  imageGeneratorModel:   "gpt-image-1-mini",// step 5: sheet+prompt -> single icon
 } as const;
 ```
 
-## Structured JSON outputs — use `responses.parse` + `zodTextFormat`
+## Structured JSON outputs — `responses.parse` + `zodTextFormat`
 
-Both helpers exist in this SDK: `openai/helpers/zod` exports `zodTextFormat`,
-and `client.responses.parse(...)` returns a typed `output_parsed`. This is the
-clean path for steps 1 & 2 (no manual JSON.parse, no fragile prompt-only JSON).
+Steps 1 and 4 return JSON. Use `client.responses.parse(...)` with
+`zodTextFormat(Schema, "name")`; read `res.output_parsed` (typed, may be null).
 
-### Vision analysis (analyze-icons.ts) — gpt-5.4-mini
+Strict-mode rules for schemas fed to `zodTextFormat`:
+
+- **No `.default(...)`.** Express optionals as `.nullable()` (e.g. `glowStyle`).
+- Keep schemas flat; avoid discriminated unions and `.transform()`.
+- `confidence` is `z.enum(["high","medium","low"])`.
+
+### Step 1 — analyze (vision) → manifest
 
 ```ts
-import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
-import { IconManifestSchema } from "@/lib/icon/schemas/icon-manifest.schema";
-
 const res = await client.responses.parse({
   model: MODEL_ROLES.visionAnalyzerModel,
-  input: [
-    {
-      role: "user",
-      content: [
-        { type: "input_text", text: ICON_ANALYSIS_PROMPT },
-        { type: "input_image", image_url: dataUrl, detail: "high" }, // dataUrl = "data:image/png;base64,...."
-      ],
-    },
-  ],
+  input: [{ role: "user", content: [
+    { type: "input_text",  text: ICON_ANALYSIS_PROMPT },
+    { type: "input_image", image_url: dataUrl, detail: "high" },
+  ]}],
   text: { format: zodTextFormat(IconManifestSchema, "icon_manifest") },
 });
-
-const manifest = res.output_parsed; // typed IconManifest | null
-if (!manifest) throw new IconPipelineError("analysis", "Model returned no manifest");
 ```
 
-- `input_image` accepts a base64 data URL via `image_url`. `detail: "high"` for dense dashboards.
-- Error codes the API may emit for bad images: `invalid_image`, `image_too_large`, `unsupported_image_media_type`, etc. Map to a friendly message.
+Manifest shape: `{ iconCount, sharedIconFamilyStyle, icons[], excludedAsNonIcons }`.
 
-### Prompt pack (generate-icon-prompts.ts) — gpt-5.4-nano
+### Step 2 — compose collection prompt (text)
 
-```ts
-const res = await client.responses.parse({
-  model: MODEL_ROLES.promptWriterModel,
-  input: [{ role: "user", content: PROMPT_PACK_PROMPT /* manifest + family style interpolated */ }],
-  text: { format: zodTextFormat(IconPromptPackSchema, "icon_prompt_pack") },
-});
-const promptPack = res.output_parsed;
-```
+Text-only. The composer is told to return **only the final prompt text** (no
+JSON), so we use `responses.create` and read `res.output_text.trim()`.
 
-### Zod schema rules for strict structured outputs
+### Step 4 — compose individual prompts (vision)
 
-Strict mode requires every property present and `additionalProperties:false`.
-The helper handles optional→nullable, but to avoid surprises:
+Same vision shape as step 1, but the **contact sheet** is the `input_image` and
+the manifest is interpolated into the text. Returns
+`{ sharedStylePrompt, iconPrompts[] }` where each prompt has
+`{ iconId, iconName, concept, contactSheetReference, prompt }`.
 
-- **Do NOT use `.default(...)`** in schemas fed to `zodTextFormat`.
-- For optional fields (`glowStyle`, `notes`), use `.nullable()` (not bare `.optional()`), or just make them required.
-- Keep schemas flat; avoid discriminated unions and `.transform()` in the output schema.
-- Confidence is an enum: `z.enum(["high","medium","low"])`.
+## Image generation with a reference image — `images.edit`
 
-## Image generation (generate-icon.ts) — gpt-image-1-mini
+Steps 3 and 5 pass a **reference image** to the GPT image model. The SDK does
+this through `client.images.edit({ image, prompt, ... })` — the `image` field
+accepts up to 16 reference images for gpt-image models. Convert a base64 / data
+URL into an `Uploadable` via `toFile` (see `lib/openai/to-file.ts`).
 
 ```ts
-const res = await client.images.generate({
+const file = await imageBase64ToFile(base64, "ref.png"); // toFile(buffer, name, { type })
+const res = await client.images.edit({
   model: MODEL_ROLES.imageGeneratorModel,
-  prompt: wrappedPrompt,        // §15.3 style wrapper + icon-specific prompt
+  image: file,                 // step 3: source image; step 5: contact sheet
+  prompt: wrappedPrompt,
   n: 1,
-  size: "1024x1024",
-  background: "transparent",    // icons should be transparent PNGs
-  quality: "medium",            // "low" | "medium" | "high" | "auto"
+  size: "1024x1024",           // 1024x1024 | 1024x1536 | 1536x1024 | auto
+  background: "transparent",   // step 5 icons; step 3 contact sheet uses "auto"
+  quality: "medium",           // "low" | "medium" | "high" | "auto"
 });
-
-const b64 = res.data?.[0]?.b64_json;
-if (!b64) throw new IconPipelineError("icon_generation", "No image returned");
+const b64 = res.data?.[0]?.b64_json;          // gpt-image returns b64_json
 const imageUrl = `data:image/png;base64,${b64}`;
 ```
 
-- **gpt-image models return `b64_json` by default** and do NOT support the legacy
-  `response_format` param. Do not pass `response_format`.
-- Valid sizes: `1024x1024 | 1024x1536 | 1536x1024 | auto`. Icons use `1024x1024` (1:1).
-- `background: "transparent"` requires PNG output (default) — good for reusable icons.
+- gpt-image models return `b64_json` by default; do NOT pass `response_format`.
+- `background: "transparent"` requires PNG (default) — good for reusable icons.
+- `input_fidelity` is **unsupported on `gpt-image-1-mini`** — do not send it.
 
 ## Next.js 16 route handlers
 
-Standard Web `Request`/`Response`. Pattern (mirrors PRD §14):
+Standard Web `Request`/`Response`. Each route: parse JSON body → validate with a
+zod request schema (`lib/icon/schemas/request.schema.ts`) → call the service →
+map `IconPipelineError` to `{ error }` + status. Images travel as base64 in the
+JSON body, so no multipart parsing is needed. Keep `OPENAI_API_KEY`
+server-side; never expose it (no `NEXT_PUBLIC_` prefix).
+
+## Shared error type (lib/icon/errors.ts)
 
 ```ts
-// app/api/icon-analysis/route.ts
-export async function POST(request: Request) {
-  let body: unknown;
-  try { body = await request.json(); }
-  catch { return Response.json({ error: "Invalid request body." }, { status: 400 }); }
-
-  // validate with zod, enforce limits, call service, map errors to friendly strings
-  return Response.json({ manifest });
-}
-```
-
-- Route handlers live only under `app/`; cannot coexist with `page.js` at the same segment.
-- Not cached by default for POST. No special config needed.
-- `request.json()` for JSON bodies. For our flow the image arrives as base64 in the JSON body (`imageBase64`), so no multipart parsing needed.
-- Keep `OPENAI_API_KEY` server-side; never expose to client. No `NEXT_PUBLIC_` prefix.
-
-## Shared error type
-
-```ts
-// lib/icon/errors.ts
 export class IconPipelineError extends Error {
   constructor(
-    public step: "upload" | "analysis" | "prompt_generation" | "icon_generation",
+    public step: PipelineErrorStep, // upload | analysis | collection_prompt |
+                                    // collection_image | individual_prompts | icon_generation
     message: string,
     public rawError?: unknown,
   ) { super(message); this.name = "IconPipelineError"; }
 }
 ```
 
-Services throw `IconPipelineError`; routes catch and map to `{ error }` + status.
-A missing key should surface as a clear "API key is not configured." 500.
+A missing key surfaces as a clear "API key is not configured." 500.
