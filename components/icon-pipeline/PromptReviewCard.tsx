@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { IconPromptPack } from "@/types/icon-pipeline";
+import type { IconPromptPack, IconFamilyStyle } from "@/types/icon-pipeline";
+import { buildIconGenerationPrompt } from "@/lib/icon/prompts";
+import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 
 export interface PromptReviewCardProps {
   promptPack: IconPromptPack;
@@ -9,6 +11,9 @@ export interface PromptReviewCardProps {
   onApprove: () => void;
   onGenerate: () => void;
   busy?: boolean;
+  /** When provided, renders an inline PromptDisclosure under each prompt textarea
+   *  showing the full wrapped prompt that will be sent to the image model. */
+  iconFamilyStyle?: IconFamilyStyle;
 }
 
 export default function PromptReviewCard({
@@ -17,6 +22,7 @@ export default function PromptReviewCard({
   onApprove,
   onGenerate,
   busy = false,
+  iconFamilyStyle,
 }: PromptReviewCardProps) {
   const [showJson, setShowJson] = useState(false);
   // Track local draft text per iconId; undefined = use promptPack value
@@ -96,6 +102,12 @@ export default function PromptReviewCard({
                 rows={4}
                 className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed w-full"
               />
+              {iconFamilyStyle && (
+                <PromptDisclosure
+                  label="View full prompt sent to image model"
+                  prompt={buildIconGenerationPrompt(iconFamilyStyle, currentText)}
+                />
+              )}
             </div>
           );
         })}
