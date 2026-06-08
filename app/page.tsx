@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import Header from "@/components/icon-pipeline/Header";
+import Nav from "@/components/Nav";
 import UploadCard from "@/components/icon-pipeline/UploadCard";
 import IconGrid from "@/components/icon-pipeline/IconGrid";
 import DebugDrawer from "@/components/icon-pipeline/DebugDrawer";
@@ -233,10 +233,21 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      <Header currentStep={currentStep} onReset={p.reset} />
+      <Nav />
 
-      <main className="flex flex-1 justify-center px-4 py-8">
-        <div className="flex w-full max-w-3xl flex-col gap-6">
+      <main className="flex flex-1 justify-center px-4 py-10">
+        <div className="flex w-full max-w-3xl flex-col gap-8">
+          {currentStep !== "idle" && (
+            <div className="flex items-center justify-end">
+              <button
+                onClick={p.reset}
+                className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                ↩ Start over
+              </button>
+            </div>
+          )}
+
           <UploadCard
             sourceImage={run.sourceImage ?? null}
             isUploading={isUploading}
@@ -246,12 +257,12 @@ export default function Home() {
             disabled={currentStep === "analyzing"}
           />
 
-          <div className="-mt-2 flex items-center gap-3 text-xs text-zinc-500">
+          <div className="-mt-2 flex items-center gap-3 text-sm text-zinc-500">
             <span>or reuse an image you&apos;ve already saved:</span>
             <GalleryPicker
               onPick={handleUseDataUrl}
               label="Choose from gallery"
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
 
@@ -285,7 +296,7 @@ export default function Home() {
           {/* Step 2 result — collection prompt */}
           {run.collectionPrompt && (
             <StepCard title="2 · Collection prompt">
-              <p className="whitespace-pre-wrap rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-xs text-zinc-300">
+              <p className="whitespace-pre-wrap rounded-xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-300">
                 {run.collectionPrompt}
               </p>
               <NextButton
@@ -359,16 +370,16 @@ export default function Home() {
           )}
 
           {currentStep === "error" && latestError && (
-            <div className="flex items-start justify-between gap-3 rounded-xl border border-red-800 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-red-800 bg-red-950/30 px-5 py-4 text-base text-red-300">
               <span>
-                <span className="font-mono text-xs uppercase tracking-widest text-red-500">
+                <span className="font-mono text-sm uppercase tracking-widest text-red-500">
                   {latestError.step}
                 </span>{" "}
                 — {latestError.message}
               </span>
               <button
                 onClick={p.clearError}
-                className="shrink-0 rounded-lg border border-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-900/40"
+                className="shrink-0 rounded-lg border border-red-800 px-3 py-1.5 text-sm text-red-200 hover:bg-red-900/40"
               >
                 Dismiss
               </button>
@@ -392,10 +403,10 @@ function StepCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+    <div className="flex flex-col gap-5 rounded-2xl border border-zinc-800 bg-zinc-900 p-7">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100">{title}</h2>
-        {subtitle && <p className="mt-0.5 text-sm text-zinc-400">{subtitle}</p>}
+        <h2 className="text-xl font-semibold text-zinc-100">{title}</h2>
+        {subtitle && <p className="mt-1 text-base text-zinc-400">{subtitle}</p>}
       </div>
       {children}
     </div>
@@ -417,7 +428,7 @@ function NextButton({
     <button
       onClick={onClick}
       disabled={busy || disabled}
-      className="self-start rounded-xl bg-violet-600 px-5 py-2 font-semibold text-white transition-colors hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:pointer-events-none disabled:opacity-40"
+      className="self-start rounded-xl bg-violet-600 px-6 py-2.5 text-base font-semibold text-white transition-colors hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:pointer-events-none disabled:opacity-40"
     >
       {busy ? "Working…" : label}
     </button>
@@ -426,8 +437,8 @@ function NextButton({
 
 function StatusLine({ text }: { text: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-cyan-900/60 bg-zinc-900 px-4 py-3 font-mono text-sm text-cyan-300">
-      <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+    <div className="flex items-center gap-3 rounded-xl border border-cyan-900/60 bg-zinc-900 px-5 py-4 font-mono text-base text-cyan-300">
+      <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-cyan-400" />
       {text}
     </div>
   );

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useRef, useCallback } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
@@ -30,6 +29,8 @@ import type {
 } from "@/types/icon-pipeline";
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import GalleryPicker from "@/components/gallery/GalleryPicker";
+import Nav from "@/components/Nav";
+import { MODEL_ROLES } from "@/lib/icon/models";
 
 // ---------------------------------------------------------------------------
 // Shared bench artifacts — each step's output is lifted here so the next step
@@ -51,7 +52,7 @@ type BenchState = {
 
 function RawJson({ data }: { data: unknown }) {
   return (
-    <pre className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-300 font-mono overflow-auto max-h-96 whitespace-pre-wrap break-words">
+    <pre className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 text-sm text-zinc-300 font-mono overflow-auto max-h-96 whitespace-pre-wrap break-words">
       {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
     </pre>
   );
@@ -59,7 +60,7 @@ function RawJson({ data }: { data: unknown }) {
 
 function ErrorMsg({ msg }: { msg: string }) {
   return (
-    <p className="text-red-400 text-sm font-mono bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">
+    <p className="text-red-400 text-sm font-mono bg-red-950/30 border border-red-800/40 rounded-lg px-4 py-3">
       {msg}
     </p>
   );
@@ -68,7 +69,7 @@ function ErrorMsg({ msg }: { msg: string }) {
 function FlowBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
-      className={`rounded-md px-2 py-0.5 font-mono text-[11px] ${
+      className={`rounded-md px-2.5 py-1 font-mono text-xs ${
         ok
           ? "bg-emerald-900/40 text-emerald-300 border border-emerald-700/40"
           : "bg-zinc-800 text-zinc-500 border border-zinc-700"
@@ -80,28 +81,57 @@ function FlowBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+// Labeled output panel — shown in every section regardless of whether a run has happened.
+function OutputPanel({
+  children,
+  empty,
+}: {
+  children?: React.ReactNode;
+  empty: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-zinc-700/60 bg-zinc-950/60 p-5">
+      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+        Output
+      </span>
+      {empty ? (
+        <p className="text-zinc-600 text-sm italic">
+          Run this step to see output here.
+        </p>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
 function SectionCard({
   title,
   num,
   inputs,
   output,
+  model,
   children,
 }: {
   title: string;
   num: number;
   inputs: string;
   output: string;
+  model: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
+    <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 flex flex-col gap-6">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-violet-400 font-mono text-sm font-bold bg-violet-900/30 border border-violet-700/40 rounded-lg px-2 py-0.5">
+        <span className="text-violet-400 font-mono text-sm font-bold bg-violet-900/30 border border-violet-700/40 rounded-lg px-2.5 py-1">
           §{num}
         </span>
-        <h2 className="text-zinc-100 text-lg font-semibold">{title}</h2>
+        <h2 className="text-zinc-100 text-xl font-semibold">{title}</h2>
+        <span className="ml-auto font-mono text-xs text-cyan-300/80 bg-zinc-800 border border-zinc-700 rounded-md px-2.5 py-1">
+          model: {model}
+        </span>
       </div>
-      <p className="text-zinc-500 text-xs font-mono">
+      <p className="text-zinc-500 text-sm font-mono">
         <span className="text-zinc-400">in:</span> {inputs}{"  "}
         <span className="text-zinc-400">→ out:</span> {output}
       </p>
@@ -126,7 +156,7 @@ function RunButton({
       type="button"
       onClick={onClick}
       disabled={busy || disabled}
-      className="bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:pointer-events-none text-white font-semibold py-2 px-5 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-zinc-900 flex items-center gap-2 self-start"
+      className="bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:pointer-events-none text-white font-semibold py-2.5 px-6 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-zinc-900 flex items-center gap-2 self-start text-sm"
     >
       {busy ? (
         <>
@@ -165,13 +195,13 @@ function ImageInput({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-xs text-zinc-500">{label}</span>
+        <span className="text-sm text-zinc-400">{label}</span>
         <GalleryPicker
           onPick={(img) => onChange(img.dataUrl, img.fileName)}
           label="Choose from gallery"
-          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
         />
-        <span className="text-xs text-zinc-600">or drop / browse below</span>
+        <span className="text-sm text-zinc-600">or drop / browse below</span>
       </div>
       <div
         onDragOver={(e) => {
@@ -186,7 +216,7 @@ function ImageInput({
           if (f && f.type.startsWith("image/")) load(f);
         }}
         onClick={() => inputRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+        className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-colors ${
           dragging
             ? "border-cyan-500 bg-cyan-950/20"
             : "border-zinc-700 hover:border-zinc-500 bg-zinc-800/30"
@@ -232,8 +262,8 @@ function JsonEditor<T>({
   parseError: string | null;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+    <div className="flex flex-col gap-2">
+      <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
         {label}
       </label>
       <textarea
@@ -241,9 +271,9 @@ function JsonEditor<T>({
         onChange={(e) => onTextChange(e.target.value)}
         rows={12}
         spellCheck={false}
-        className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+        className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
       />
-      {parseError && <p className="text-red-400 text-xs">{parseError}</p>}
+      {parseError && <p className="text-red-400 text-sm">{parseError}</p>}
     </div>
   );
 }
@@ -283,12 +313,18 @@ function Section1({
   };
 
   return (
-    <SectionCard title="Analyze" num={1} inputs="source image" output="icon manifest JSON">
+    <SectionCard
+      title="Analyze"
+      num={1}
+      inputs="source image"
+      output="icon manifest JSON"
+      model={MODEL_ROLES.visionAnalyzerModel}
+    >
       <PromptDisclosure
         label="View exact prompt sent to vision model"
         prompt={ICON_ANALYSIS_PROMPT}
       />
-      <p className="text-zinc-500 text-xs italic">
+      <p className="text-zinc-500 text-sm italic">
         + the source image is sent as image input alongside this prompt
       </p>
       <ImageInput
@@ -299,8 +335,10 @@ function Section1({
         }
       />
       <RunButton onClick={run} busy={busy} disabled={!state.sourceDataUrl} />
-      {error && <ErrorMsg msg={error} />}
-      {result && <RawJson data={result} />}
+      <OutputPanel empty={!error && !result}>
+        {error && <ErrorMsg msg={error} />}
+        {result && <RawJson data={result} />}
+      </OutputPanel>
     </SectionCard>
   );
 }
@@ -367,6 +405,7 @@ function Section2({
       num={2}
       inputs="icon manifest JSON"
       output="collection image prompt (text)"
+      model={MODEL_ROLES.collectionPromptModel}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -375,7 +414,7 @@ function Section2({
       <button
         onClick={syncFromState}
         disabled={!state.manifest}
-        className="self-start text-xs text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
+        className="self-start text-sm text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
       >
         ↑ pull manifest from §1
       </button>
@@ -386,8 +425,10 @@ function Section2({
         parseError={parseError}
       />
       <RunButton onClick={run} busy={busy} disabled={!!parseError} />
-      {error && <ErrorMsg msg={error} />}
-      {result && <RawJson data={result} />}
+      <OutputPanel empty={!error && !result}>
+        {error && <ErrorMsg msg={error} />}
+        {result && <RawJson data={result} />}
+      </OutputPanel>
     </SectionCard>
   );
 }
@@ -462,6 +503,7 @@ function Section3({
       num={3}
       inputs="source image + manifest + collection prompt"
       output="contact sheet image"
+      model={MODEL_ROLES.collectionImageModel}
     >
       <PromptDisclosure
         label="View exact body sent to image model (live)"
@@ -469,7 +511,7 @@ function Section3({
       />
       <button
         onClick={pull}
-        className="self-start text-xs text-cyan-400/80 hover:text-cyan-300"
+        className="self-start text-sm text-cyan-400/80 hover:text-cyan-300"
       >
         ↑ pull manifest from §1 + prompt from §2
       </button>
@@ -480,15 +522,15 @@ function Section3({
           patch({ sourceDataUrl: dataUrl, sourceFileName: fileName })
         }
       />
-      <div className="flex flex-col gap-1.5">
-        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+      <div className="flex flex-col gap-2">
+        <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
           Collection prompt (editable)
         </label>
         <textarea
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           rows={5}
-          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
         />
       </div>
       <JsonEditor
@@ -503,17 +545,19 @@ function Section3({
         disabled={!!parseError || !state.sourceDataUrl}
       />
       {!state.sourceDataUrl && (
-        <p className="text-zinc-500 text-xs">Provide a source image first.</p>
+        <p className="text-zinc-500 text-sm">Provide a source image first.</p>
       )}
-      {error && <ErrorMsg msg={error} />}
-      {result && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={result}
-          alt="contact sheet"
-          className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-950"
-        />
-      )}
+      <OutputPanel empty={!error && !result}>
+        {error && <ErrorMsg msg={error} />}
+        {result && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={result}
+            alt="contact sheet"
+            className="w-full rounded-xl border border-zinc-700 object-contain bg-zinc-950"
+          />
+        )}
+      </OutputPanel>
     </SectionCard>
   );
 }
@@ -583,18 +627,19 @@ function Section4({
       num={4}
       inputs="contact sheet + manifest"
       output="sharedStylePrompt + one prompt per icon"
+      model={MODEL_ROLES.individualPromptModel}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
         prompt={buildIndividualPromptComposer(manifestText)}
       />
-      <p className="text-zinc-500 text-xs italic">
+      <p className="text-zinc-500 text-sm italic">
         + the contact sheet (§3) is sent as image input alongside this prompt
       </p>
       <button
         onClick={pull}
         disabled={!state.manifest}
-        className="self-start text-xs text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
+        className="self-start text-sm text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
       >
         ↑ pull manifest from §1
       </button>
@@ -615,10 +660,12 @@ function Section4({
         disabled={!!parseError || !state.collectionImageDataUrl}
       />
       {!state.collectionImageDataUrl && (
-        <p className="text-zinc-500 text-xs">Generate or provide a contact sheet first (§3).</p>
+        <p className="text-zinc-500 text-sm">Generate or provide a contact sheet first (§3).</p>
       )}
-      {error && <ErrorMsg msg={error} />}
-      {result && <RawJson data={result} />}
+      <OutputPanel empty={!error && !result}>
+        {error && <ErrorMsg msg={error} />}
+        {result && <RawJson data={result} />}
+      </OutputPanel>
     </SectionCard>
   );
 }
@@ -679,22 +726,23 @@ function Section5({ state }: { state: BenchState }) {
       num={5}
       inputs="contact sheet + sharedStylePrompt + one icon prompt"
       output="single icon image"
+      model={MODEL_ROLES.imageGeneratorModel}
     >
       <PromptDisclosure
         label="View full wrapper sent to image model (live)"
         prompt={resolvedWrapper}
       />
-      <p className="text-zinc-500 text-xs italic">
+      <p className="text-zinc-500 text-sm italic">
         + the contact sheet (§3) is attached as the style reference
       </p>
-      <div className="flex flex-col gap-1.5">
-        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+      <div className="flex flex-col gap-2">
+        <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
           Pick an icon
         </label>
         <select
           value={selectedId}
           onChange={(e) => onSelect(e.target.value)}
-          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
         >
           {prompts.iconPrompts.map((p) => (
             <option key={p.iconId} value={p.iconId}>
@@ -703,46 +751,48 @@ function Section5({ state }: { state: BenchState }) {
           ))}
         </select>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+      <div className="flex flex-col gap-2">
+        <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
           sharedStylePrompt (editable)
         </label>
         <textarea
           value={sharedStyle}
           onChange={(e) => setSharedStyle(e.target.value)}
           rows={3}
-          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
         />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <label className="text-zinc-400 text-xs font-medium uppercase tracking-wide">
+      <div className="flex flex-col gap-2">
+        <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
           Icon-specific prompt (editable)
         </label>
         <textarea
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           rows={4}
-          className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
         />
       </div>
       <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
       {!state.collectionImageDataUrl && (
-        <p className="text-zinc-500 text-xs">A contact sheet (§3) is required as the reference.</p>
+        <p className="text-zinc-500 text-sm">A contact sheet (§3) is required as the reference.</p>
       )}
-      {error && <ErrorMsg msg={error} />}
-      {result && (
-        <div className="flex flex-col gap-3">
-          {result.imageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={result.imageUrl}
-              alt={result.iconName}
-              className="w-32 h-32 rounded-xl border border-zinc-700 object-contain bg-zinc-800/50"
-            />
-          )}
-          <RawJson data={result} />
-        </div>
-      )}
+      <OutputPanel empty={!error && !result}>
+        {error && <ErrorMsg msg={error} />}
+        {result && (
+          <div className="flex flex-col gap-4">
+            {result.imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={result.imageUrl}
+                alt={result.iconName}
+                className="w-32 h-32 rounded-xl border border-zinc-700 object-contain bg-zinc-800/50"
+              />
+            )}
+            <RawJson data={result} />
+          </div>
+        )}
+      </OutputPanel>
     </SectionCard>
   );
 }
@@ -783,6 +833,7 @@ function Section6({ state }: { state: BenchState }) {
       num={6}
       inputs="contact sheet + all icon prompts"
       output="all generated icons"
+      model={MODEL_ROLES.imageGeneratorModel}
     >
       <p className="text-zinc-400 text-sm">
         Generates every icon in{" "}
@@ -792,40 +843,42 @@ function Section6({ state }: { state: BenchState }) {
       </p>
       <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
       {!state.collectionImageDataUrl && (
-        <p className="text-zinc-500 text-xs">A contact sheet (§3) is required as the reference.</p>
+        <p className="text-zinc-500 text-sm">A contact sheet (§3) is required as the reference.</p>
       )}
-      {error && <ErrorMsg msg={error} />}
-      {result && (
-        <>
-          <p className="text-cyan-400 text-sm font-mono">
-            {okCount}/{result.length} succeeded.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {result.map((g) => (
-              <div
-                key={g.id}
-                className="bg-zinc-950 border border-zinc-800 rounded-xl p-2 flex flex-col gap-2"
-              >
-                <div className="aspect-square flex items-center justify-center bg-zinc-900 rounded-lg">
-                  {g.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={g.imageUrl}
-                      alt={g.iconName}
-                      className="w-full h-full object-contain p-2"
-                    />
-                  ) : (
-                    <span className="text-red-400 text-xs px-2 text-center">
-                      {g.error ?? "failed"}
-                    </span>
-                  )}
+      <OutputPanel empty={!error && !result}>
+        {error && <ErrorMsg msg={error} />}
+        {result && (
+          <>
+            <p className="text-cyan-400 text-sm font-mono">
+              {okCount}/{result.length} succeeded.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {result.map((g) => (
+                <div
+                  key={g.id}
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl p-2 flex flex-col gap-2"
+                >
+                  <div className="aspect-square flex items-center justify-center bg-zinc-900 rounded-lg">
+                    {g.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={g.imageUrl}
+                        alt={g.iconName}
+                        className="w-full h-full object-contain p-2"
+                      />
+                    ) : (
+                      <span className="text-red-400 text-sm px-2 text-center">
+                        {g.error ?? "failed"}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-zinc-300 text-sm truncate">{g.iconName}</span>
                 </div>
-                <span className="text-zinc-300 text-xs truncate">{g.iconName}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+              ))}
+            </div>
+          </>
+        )}
+      </OutputPanel>
     </SectionCard>
   );
 }
@@ -850,39 +903,36 @@ export default function BenchPage() {
   );
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-10">
-      <div className="max-w-4xl mx-auto flex flex-col gap-8">
-        <div className="flex flex-col gap-1">
-          <Link
-            href="/"
-            className="self-start font-mono text-xs text-cyan-400/80 hover:text-cyan-300"
-          >
-            ← back to app
-          </Link>
-          <h1 className="mt-1 text-2xl font-bold text-zinc-100">Test Bench</h1>
-          <p className="text-zinc-500 text-sm">
-            Each step in the icon pipeline as an independent, rerunnable
-            breakpoint. Edit any input, view the{" "}
-            <span className="text-cyan-400">exact resolved prompt</span> before
-            you run, and feed each step&apos;s output into the next.
-          </p>
-          {/* Artifact flow indicator */}
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <FlowBadge ok={!!state.sourceDataUrl} label="source" />
-            <FlowBadge ok={!!state.manifest} label="manifest" />
-            <FlowBadge ok={!!state.collectionPrompt} label="collection prompt" />
-            <FlowBadge ok={!!state.collectionImageDataUrl} label="contact sheet" />
-            <FlowBadge ok={!!state.individualPrompts} label="icon prompts" />
+    <>
+      <Nav />
+      <main className="min-h-screen bg-zinc-950 px-4 py-10">
+        <div className="max-w-4xl mx-auto flex flex-col gap-10">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl font-bold text-zinc-100">Test Bench</h1>
+            <p className="text-zinc-400 text-base">
+              Each step in the icon pipeline as an independent, rerunnable
+              breakpoint. Edit any input, view the{" "}
+              <span className="text-cyan-400">exact resolved prompt</span> before
+              you run, and feed each step&apos;s output into the next.
+            </p>
+            {/* Artifact flow indicator */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <FlowBadge ok={!!state.sourceDataUrl} label="source" />
+              <FlowBadge ok={!!state.manifest} label="manifest" />
+              <FlowBadge ok={!!state.collectionPrompt} label="collection prompt" />
+              <FlowBadge ok={!!state.collectionImageDataUrl} label="contact sheet" />
+              <FlowBadge ok={!!state.individualPrompts} label="icon prompts" />
+            </div>
           </div>
-        </div>
 
-        <Section1 state={state} patch={patch} />
-        <Section2 state={state} patch={patch} />
-        <Section3 state={state} patch={patch} />
-        <Section4 state={state} patch={patch} />
-        <Section5 state={state} />
-        <Section6 state={state} />
-      </div>
-    </main>
+          <Section1 state={state} patch={patch} />
+          <Section2 state={state} patch={patch} />
+          <Section3 state={state} patch={patch} />
+          <Section4 state={state} patch={patch} />
+          <Section5 state={state} />
+          <Section6 state={state} />
+        </div>
+      </main>
+    </>
   );
 }
