@@ -16,13 +16,14 @@ function toDataUrl(imageBase64: string): string {
 export async function analyzeIcons(
   imageBase64: string,
   _fileName?: string,
+  opts?: { model?: string },
 ): Promise<IconManifest> {
   const client = getClient();
   const dataUrl = toDataUrl(imageBase64);
 
   try {
     const res = await client.responses.parse({
-      model: MODEL_ROLES.visionAnalyzerModel,
+      model: opts?.model ?? MODEL_ROLES.visionAnalyzerModel,
       input: [
         {
           role: "user",

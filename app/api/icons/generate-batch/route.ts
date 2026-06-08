@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { collectionImageBase64, individualPrompts } = parsed.data;
+  const { collectionImageBase64, individualPrompts, model, quality } = parsed.data;
 
   if (individualPrompts.iconPrompts.length > HARD_MAX_ICONS) {
     return Response.json(
@@ -59,6 +59,8 @@ export async function POST(request: Request) {
       collectionImageBase64,
       sharedStylePrompt: individualPrompts.sharedStylePrompt,
       iconPrompt,
+      model,
+      quality,
     };
     return () => generateIconSafe(args);
   });

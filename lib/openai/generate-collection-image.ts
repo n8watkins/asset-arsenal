@@ -16,18 +16,21 @@ export async function generateCollectionImage(args: {
   sourceImageBase64: string;
   manifest: IconManifest;
   collectionPrompt: string;
+  model?: string;
+  quality?: "low" | "medium" | "high";
 }): Promise<CollectionImage> {
   const client = getClient();
   const body = buildCollectionImageBody(
     JSON.stringify(args.manifest, null, 2),
     args.collectionPrompt,
   );
+  const model = args.model ?? MODEL_ROLES.collectionImageModel;
 
   try {
     const sourceFile = await imageBase64ToFile(args.sourceImageBase64, "source.png");
 
     const res = await client.images.edit({
-      model: MODEL_ROLES.collectionImageModel,
+      model,
       image: sourceFile,
       prompt: body,
       n: 1,
@@ -35,7 +38,7 @@ export async function generateCollectionImage(args: {
       // The collection image is a presentation surface (dark navy), not a
       // transparent asset — let the model pick the best background.
       background: "auto",
-      quality: "high",
+      quality: args.quality ?? "high",
     });
 
     const b64 = res.data?.[0]?.b64_json;
@@ -50,7 +53,7 @@ export async function generateCollectionImage(args: {
       id: crypto.randomUUID(),
       imageUrl: `data:image/png;base64,${b64}`,
       promptUsed: args.collectionPrompt,
-      modelUsed: MODEL_ROLES.collectionImageModel,
+      modelUsed: model,
       createdAt: new Date().toISOString(),
     };
   } catch (err) {

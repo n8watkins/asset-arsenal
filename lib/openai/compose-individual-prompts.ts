@@ -22,6 +22,7 @@ function toDataUrl(imageBase64: string): string {
 export async function composeIndividualPrompts(args: {
   collectionImageBase64: string;
   manifest: IconManifest;
+  model?: string;
 }): Promise<IndividualIconPrompts> {
   const client = getClient();
   const promptText = buildIndividualPromptComposer(
@@ -31,7 +32,7 @@ export async function composeIndividualPrompts(args: {
 
   try {
     const res = await client.responses.parse({
-      model: MODEL_ROLES.individualPromptModel,
+      model: args.model ?? MODEL_ROLES.individualPromptModel,
       input: [
         {
           role: "user",

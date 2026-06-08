@@ -19,7 +19,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const collectionPrompt = await composeCollectionPrompt(parsed.data.manifest);
+    const collectionPrompt = await composeCollectionPrompt(parsed.data.manifest, {
+      model: parsed.data.model,
+    });
     return Response.json({ collectionPrompt });
   } catch (err) {
     console.error("[icons/compose-collection-prompt]", err);

@@ -167,11 +167,18 @@ export type IconExtractionRun = {
 // ---------------------------------------------------------------------------
 
 // POST /api/icons/analyze
-export type AnalyzeRequest = { imageBase64: string; fileName?: string };
+export type AnalyzeRequest = {
+  imageBase64: string;
+  fileName?: string;
+  model?: string;
+};
 export type AnalyzeResponse = { manifest: IconManifest };
 
 // POST /api/icons/compose-collection-prompt
-export type ComposeCollectionPromptRequest = { manifest: IconManifest };
+export type ComposeCollectionPromptRequest = {
+  manifest: IconManifest;
+  model?: string;
+};
 export type ComposeCollectionPromptResponse = { collectionPrompt: string };
 
 // POST /api/icons/generate-collection-image
@@ -179,6 +186,8 @@ export type GenerateCollectionImageRequest = {
   sourceImageBase64: string;
   manifest: IconManifest;
   collectionPrompt: string;
+  model?: string;
+  quality?: "low" | "medium" | "high";
 };
 export type GenerateCollectionImageResponse = { collectionImage: CollectionImage };
 
@@ -186,6 +195,7 @@ export type GenerateCollectionImageResponse = { collectionImage: CollectionImage
 export type ComposeIndividualPromptsRequest = {
   collectionImageBase64: string;
   manifest: IconManifest;
+  model?: string;
 };
 export type ComposeIndividualPromptsResponse = {
   individualPrompts: IndividualIconPrompts;
@@ -196,6 +206,8 @@ export type GenerateOneRequest = {
   collectionImageBase64: string;
   sharedStylePrompt: string;
   iconPrompt: IndividualIconPrompt;
+  model?: string;
+  quality?: "low" | "medium" | "high";
 };
 export type GenerateOneResponse = { generatedIcon: GeneratedIcon };
 
@@ -203,5 +215,7 @@ export type GenerateOneResponse = { generatedIcon: GeneratedIcon };
 export type GenerateBatchRequest = {
   collectionImageBase64: string;
   individualPrompts: IndividualIconPrompts;
+  model?: string;
+  quality?: "low" | "medium" | "high";
 };
 export type GenerateBatchResponse = { generatedIcons: GeneratedIcon[] };

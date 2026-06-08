@@ -34,7 +34,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const manifest = await analyzeIcons(imageBase64, fileName);
+    const manifest = await analyzeIcons(imageBase64, fileName, {
+      model: parsed.data.model,
+    });
     return Response.json({ manifest });
   } catch (err) {
     console.error("[icons/analyze]", err);

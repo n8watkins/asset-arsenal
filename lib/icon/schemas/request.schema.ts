@@ -12,11 +12,13 @@ import {
 export const AnalyzeRequestSchema = z.object({
   imageBase64: z.string().min(1),
   fileName: z.string().optional(),
+  model: z.string().optional(),
 });
 
 // POST /api/icons/compose-collection-prompt
 export const ComposeCollectionPromptRequestSchema = z.object({
   manifest: IconManifestSchema,
+  model: z.string().optional(),
 });
 
 // POST /api/icons/generate-collection-image
@@ -24,12 +26,15 @@ export const GenerateCollectionImageRequestSchema = z.object({
   sourceImageBase64: z.string().min(1),
   manifest: IconManifestSchema,
   collectionPrompt: z.string().min(1),
+  model: z.string().optional(),
+  quality: z.enum(["low", "medium", "high"]).optional(),
 });
 
 // POST /api/icons/compose-individual-prompts
 export const ComposeIndividualPromptsRequestSchema = z.object({
   collectionImageBase64: z.string().min(1),
   manifest: IconManifestSchema,
+  model: z.string().optional(),
 });
 
 // POST /api/icons/generate-one
@@ -37,10 +42,14 @@ export const GenerateOneRequestSchema = z.object({
   collectionImageBase64: z.string().min(1),
   sharedStylePrompt: z.string(),
   iconPrompt: IndividualIconPromptSchema,
+  model: z.string().optional(),
+  quality: z.enum(["low", "medium", "high"]).optional(),
 });
 
 // POST /api/icons/generate-batch
 export const GenerateBatchRequestSchema = z.object({
   collectionImageBase64: z.string().min(1),
   individualPrompts: IndividualIconPromptsSchema,
+  model: z.string().optional(),
+  quality: z.enum(["low", "medium", "high"]).optional(),
 });

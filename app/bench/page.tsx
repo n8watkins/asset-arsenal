@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
   buildCollectionPromptComposer,
@@ -31,7 +31,12 @@ import type {
 import PromptDisclosure from "@/components/icon-pipeline/PromptDisclosure";
 import GalleryPicker from "@/components/gallery/GalleryPicker";
 import Nav from "@/components/Nav";
-import { MODEL_ROLES } from "@/lib/icon/models";
+import {
+  type Stack,
+  DEFAULT_STACK,
+  type StepKey,
+} from "@/lib/icon/model-reference";
+import { loadStacks } from "@/lib/icon/stacks";
 
 // ---------------------------------------------------------------------------
 // Shared bench artifacts — each step's output is lifted here so the next step
@@ -39,6 +44,7 @@ import { MODEL_ROLES } from "@/lib/icon/models";
 // ---------------------------------------------------------------------------
 
 type BenchState = {
+  stack: Stack;
   sourceDataUrl: string | null;
   sourceFileName: string | null;
   manifest: IconManifest | null;
@@ -280,6 +286,82 @@ function JsonEditor<T>({
 }
 
 // ---------------------------------------------------------------------------
+// Stack picker — selects which model + quality config every step runs with.
+// ---------------------------------------------------------------------------
+
+const STACK_STEPS: { key: StepKey; label: string }[] = [
+  { key: "analyze", label: "§1 analyze" },
+  { key: "collectionPrompt", label: "§2 collection prompt" },
+  { key: "collectionImage", label: "§3 collection image" },
+  { key: "individualPrompts", label: "§4 individual prompts" },
+  { key: "generateIcons", label: "§5/6 generate icons" },
+];
+
+function StackPicker({
+  stack,
+  options,
+  onSelect,
+}: {
+  stack: Stack;
+  options: Stack[];
+  onSelect: (name: string) => void;
+}) {
+  return (
+    <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          Stack
+        </span>
+        <select
+          value={stack.name}
+          onChange={(e) => onSelect(e.target.value)}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          {options.map((s) => (
+            <option key={s.name} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <Link
+          href="/models"
+          className="ml-auto text-sm font-medium text-cyan-400/80 hover:text-cyan-300"
+        >
+          build &amp; save stacks →
+        </Link>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {STACK_STEPS.map(({ key, label }) => {
+          const isImage =
+            key === "collectionImage" || key === "generateIcons";
+          const quality = isImage
+            ? key === "collectionImage"
+              ? stack.quality.collectionImage
+              : stack.quality.generateIcons
+            : null;
+          return (
+            <span
+              key={key}
+              className="font-mono text-xs text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-md px-2.5 py-1"
+            >
+              <span className="text-zinc-500">{label}:</span>{" "}
+              <span className="text-cyan-300/80">{stack.models[key]}</span>
+              {quality && (
+                <span className="text-zinc-500"> @ {quality}</span>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      <p className="text-zinc-600 text-xs">
+        Every step below runs with this stack&apos;s model (and image quality).
+        Edit or add stacks on the models page.
+      </p>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // §1 — Analyze
 // ---------------------------------------------------------------------------
 
@@ -303,6 +385,7 @@ function Section1({
       const { manifest } = await analyzeImage(
         state.sourceDataUrl,
         state.sourceFileName ?? undefined,
+        state.stack.models.analyze,
       );
       setResult(manifest);
       patch({ manifest });
@@ -319,7 +402,7 @@ function Section1({
       num={1}
       inputs="source image"
       output="icon manifest JSON"
-      model={MODEL_ROLES.visionAnalyzerModel}
+      model={state.stack.models.analyze}
     >
       <PromptDisclosure
         label="View exact prompt sent to vision model"
@@ -390,7 +473,10 @@ function Section2({
     setError(null);
     setResult(null);
     try {
-      const { collectionPrompt } = await composeCollectionPrompt(parsed);
+      const { collectionPrompt } = await composeCollectionPrompt(
+        parsed,
+        state.stack.models.collectionPrompt,
+      );
       setResult(collectionPrompt);
       patch({ collectionPrompt });
     } catch (err) {
@@ -406,7 +492,7 @@ function Section2({
       num={2}
       inputs="icon manifest JSON"
       output="collection image prompt (text)"
-      model={MODEL_ROLES.collectionPromptModel}
+      model={state.stack.models.collectionPrompt}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -488,6 +574,8 @@ function Section3({
         sourceImageBase64: state.sourceDataUrl,
         manifest: parsed,
         collectionPrompt: promptText,
+        model: state.stack.models.collectionImage,
+        quality: state.stack.quality.collectionImage,
       });
       setResult(collectionImage.imageUrl);
       patch({ collectionImageDataUrl: collectionImage.imageUrl });
@@ -504,7 +592,7 @@ function Section3({
       num={3}
       inputs="source image + manifest + collection prompt"
       output="collection image image"
-      model={MODEL_ROLES.collectionImageModel}
+      model={state.stack.models.collectionImage}
     >
       <PromptDisclosure
         label="View exact body sent to image model (live)"
@@ -612,6 +700,7 @@ function Section4({
       const { individualPrompts } = await composeIndividualPrompts({
         collectionImageBase64: state.collectionImageDataUrl,
         manifest: parsed,
+        model: state.stack.models.individualPrompts,
       });
       setResult(individualPrompts);
       patch({ individualPrompts });
@@ -628,7 +717,7 @@ function Section4({
       num={4}
       inputs="collection image + manifest"
       output="sharedStylePrompt + one prompt per icon"
-      model={MODEL_ROLES.individualPromptModel}
+      model={state.stack.models.individualPrompts}
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
@@ -712,6 +801,8 @@ function Section5({ state }: { state: BenchState }) {
         collectionImageBase64: state.collectionImageDataUrl,
         sharedStylePrompt: sharedStyle,
         iconPrompt: { ...selected, prompt: promptText },
+        model: state.stack.models.generateIcons,
+        quality: state.stack.quality.generateIcons,
       });
       setResult(generatedIcon);
     } catch (err) {
@@ -727,7 +818,7 @@ function Section5({ state }: { state: BenchState }) {
       num={5}
       inputs="collection image + sharedStylePrompt + one icon prompt"
       output="single icon image"
-      model={MODEL_ROLES.imageGeneratorModel}
+      model={state.stack.models.generateIcons}
     >
       <PromptDisclosure
         label="View full wrapper sent to image model (live)"
@@ -817,6 +908,8 @@ function Section6({ state }: { state: BenchState }) {
       const { generatedIcons } = await generateIconsBatch({
         collectionImageBase64: state.collectionImageDataUrl,
         individualPrompts: prompts,
+        model: state.stack.models.generateIcons,
+        quality: state.stack.quality.generateIcons,
       });
       setResult(generatedIcons);
     } catch (err) {
@@ -834,7 +927,7 @@ function Section6({ state }: { state: BenchState }) {
       num={6}
       inputs="collection image + all icon prompts"
       output="all generated icons"
-      model={MODEL_ROLES.imageGeneratorModel}
+      model={state.stack.models.generateIcons}
     >
       <p className="text-zinc-400 text-sm">
         Generates every icon in{" "}
@@ -890,6 +983,7 @@ function Section6({ state }: { state: BenchState }) {
 
 export default function BenchPage() {
   const [state, setState] = useState<BenchState>({
+    stack: DEFAULT_STACK,
     sourceDataUrl: null,
     sourceFileName: null,
     manifest: null,
@@ -902,6 +996,20 @@ export default function BenchPage() {
     (p: Partial<BenchState>) => setState((s) => ({ ...s, ...p })),
     [],
   );
+
+  // Saved stacks come from localStorage; load once on mount (client-only).
+  const [savedStacks, setSavedStacks] = useState<Stack[]>([]);
+  useEffect(() => {
+    setSavedStacks(loadStacks());
+  }, []);
+
+  // The picker offers DEFAULT_STACK first, then every saved stack by name.
+  const stackOptions = [DEFAULT_STACK, ...savedStacks];
+  const selectStack = (name: string) => {
+    const found = stackOptions.find((s) => s.name === name) ?? DEFAULT_STACK;
+    // Deep-clone so editing the selection never mutates the stored stack.
+    patch({ stack: structuredClone(found) });
+  };
 
   return (
     <>
@@ -931,6 +1039,12 @@ export default function BenchPage() {
               <FlowBadge ok={!!state.individualPrompts} label="icon prompts" />
             </div>
           </div>
+
+          <StackPicker
+            stack={state.stack}
+            options={stackOptions}
+            onSelect={selectStack}
+          />
 
           <Section1 state={state} patch={patch} />
           <Section2 state={state} patch={patch} />

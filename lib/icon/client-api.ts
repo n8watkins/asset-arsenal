@@ -13,6 +13,7 @@ import type {
   IndividualIconPrompt,
   IndividualIconPrompts,
 } from "@/types/icon-pipeline";
+import type { ImageQuality } from "@/lib/icon/model-reference";
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   let res: Response;
@@ -35,18 +36,23 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 }
 
 // Step 1
-export function analyzeImage(imageBase64: string, fileName?: string) {
+export function analyzeImage(
+  imageBase64: string,
+  fileName?: string,
+  model?: string,
+) {
   return postJSON<AnalyzeResponse>("/api/icons/analyze", {
     imageBase64,
     fileName,
+    model,
   });
 }
 
 // Step 2
-export function composeCollectionPrompt(manifest: IconManifest) {
+export function composeCollectionPrompt(manifest: IconManifest, model?: string) {
   return postJSON<ComposeCollectionPromptResponse>(
     "/api/icons/compose-collection-prompt",
-    { manifest },
+    { manifest, model },
   );
 }
 
@@ -55,6 +61,8 @@ export function generateCollectionImage(args: {
   sourceImageBase64: string;
   manifest: IconManifest;
   collectionPrompt: string;
+  model?: string;
+  quality?: ImageQuality;
 }) {
   return postJSON<GenerateCollectionImageResponse>(
     "/api/icons/generate-collection-image",
@@ -66,6 +74,7 @@ export function generateCollectionImage(args: {
 export function composeIndividualPrompts(args: {
   collectionImageBase64: string;
   manifest: IconManifest;
+  model?: string;
 }) {
   return postJSON<ComposeIndividualPromptsResponse>(
     "/api/icons/compose-individual-prompts",
@@ -78,6 +87,8 @@ export function generateOneIcon(args: {
   collectionImageBase64: string;
   sharedStylePrompt: string;
   iconPrompt: IndividualIconPrompt;
+  model?: string;
+  quality?: ImageQuality;
 }) {
   return postJSON<GenerateOneResponse>("/api/icons/generate-one", args);
 }
@@ -86,6 +97,8 @@ export function generateOneIcon(args: {
 export function generateIconsBatch(args: {
   collectionImageBase64: string;
   individualPrompts: IndividualIconPrompts;
+  model?: string;
+  quality?: ImageQuality;
 }) {
   return postJSON<GenerateBatchResponse>("/api/icons/generate-batch", args);
 }

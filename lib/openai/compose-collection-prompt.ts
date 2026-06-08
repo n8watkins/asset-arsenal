@@ -12,13 +12,14 @@ import { getClient } from "./client";
  */
 export async function composeCollectionPrompt(
   manifest: IconManifest,
+  opts?: { model?: string },
 ): Promise<string> {
   const client = getClient();
   const input = buildCollectionPromptComposer(JSON.stringify(manifest, null, 2));
 
   try {
     const res = await client.responses.create({
-      model: MODEL_ROLES.collectionPromptModel,
+      model: opts?.model ?? MODEL_ROLES.collectionPromptModel,
       input: [{ role: "user", content: input }],
     });
 
