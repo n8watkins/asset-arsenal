@@ -71,7 +71,15 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   );
 }
 
-export default function GeminiChat() {
+export interface GeminiChatProps {
+  // When the runner sends results over, the drawer passes them here to pre-fill
+  // the composer. seedNonce changes on each send so repeats re-apply.
+  seedText?: string;
+  seedImages?: string[];
+  seedNonce?: number;
+}
+
+export default function GeminiChat({ seedText, seedImages, seedNonce }: GeminiChatProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [model, setModel] = useState<string>(DEFAULT_JUDGE_MODEL);
@@ -103,6 +111,14 @@ export default function GeminiChat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active?.messages.length, loading]);
+
+  // Pre-fill the composer when the runner seeds the drawer with results.
+  useEffect(() => {
+    if (seedNonce === undefined) return;
+    if (seedText !== undefined) setInput(seedText);
+    if (seedImages && seedImages.length) setPending(seedImages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedNonce]);
 
   function patchActive(updater: (c: Chat) => Chat) {
     setChats((prev) => prev.map((c) => (c.id === activeId ? updater(c) : c)));
@@ -235,9 +251,9 @@ export default function GeminiChat() {
             <div ref={bottomRef} />
           </div>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-sm text-zinc-600">
-            <p>Paste two prompts and ask “compare these”.</p>
-            <p>Or attach two images and ask which icon is better.</p>
+          <div className="flex h-full flex-col items-center justify-center gap-0.5 px-4 text-center text-xs text-zinc-600">
+            <p>Paste two prompts → “compare these”.</p>
+            <p>Or attach two images → “which icon is better?”</p>
           </div>
         )}
       </div>
@@ -282,7 +298,7 @@ export default function GeminiChat() {
               void onSend();
             }
           }}
-          rows={3}
+          rows={2}
           placeholder="Ask Gemini… (⌘/Ctrl+Enter to send)"
           className="resize-y rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/40"
         />

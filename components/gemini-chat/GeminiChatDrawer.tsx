@@ -1,22 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import GeminiChat from "./GeminiChat";
+import { useGeminiDrawer } from "./GeminiDrawerProvider";
 
-// Global pop-out Gemini analysis chat, mounted in the root layout so it's
-// available on every page. Launcher sits bottom-left (clear of the bench
-// DebugDrawer, bottom-right). Standalone — not wired to the experiment Runner.
+// The global Gemini analysis drawer — the single Gemini surface, available on
+// every page. Open state + composer seed come from GeminiDrawerProvider, so the
+// experiment runner can open it pre-loaded with two results. Launcher sits
+// bottom-left (clear of the bench DebugDrawer, bottom-right).
 
 export default function GeminiChatDrawer() {
-  const [open, setOpen] = useState(false);
+  const { open, seed, toggle, close } = useGeminiDrawer();
 
   return (
     <>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         className="fixed bottom-5 left-5 z-50 flex items-center gap-2 rounded-xl border border-cyan-700/50 bg-cyan-950/60 px-3 py-2 text-xs font-medium text-cyan-300 shadow-lg backdrop-blur-sm transition-colors hover:bg-cyan-900/60 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        aria-label="Toggle Gemini analysis chat"
+        aria-label="Toggle Gemini analysis"
       >
         <span aria-hidden>✦</span>
         {open ? "Close Gemini" : "Gemini"}
@@ -24,23 +25,18 @@ export default function GeminiChatDrawer() {
 
       {open && (
         <div className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-zinc-800 bg-zinc-950 shadow-2xl">
-          <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-5 py-4">
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Gemini Analysis</h3>
-              <p className="mt-0.5 text-xs text-zinc-500">
-                Paste prompts or images and ask — compare, critique, distill.
-              </p>
-            </div>
+          <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
+            <h3 className="text-sm font-semibold text-zinc-100">Gemini Analysis</h3>
             <div className="flex items-center gap-3">
               <Link
                 href="/gemini"
-                onClick={() => setOpen(false)}
+                onClick={close}
                 className="rounded-lg px-2 py-1 text-xs text-cyan-400/80 transition-colors hover:text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               >
-                Full view ↗
+                History ↗
               </Link>
               <button
-                onClick={() => setOpen(false)}
+                onClick={close}
                 className="rounded-lg p-1 text-zinc-400 transition-colors hover:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                 aria-label="Close"
               >
@@ -51,14 +47,14 @@ export default function GeminiChatDrawer() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 px-5 py-4">
-            <GeminiChat />
+          <div className="min-h-0 flex-1 px-4 py-3">
+            <GeminiChat seedText={seed?.text} seedImages={seed?.images} seedNonce={seed?.nonce} />
           </div>
         </div>
       )}
 
       {open && (
-        <div className="fixed inset-0 z-30 bg-black/40" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-30 bg-black/40" onClick={close} />
       )}
     </>
   );
