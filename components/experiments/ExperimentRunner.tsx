@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { SIGNATURE_PRESETS, modelsForSignature } from "@/lib/experiments/model-registry";
 import { runCell } from "@/lib/experiments/run-client";
 import type { CellResult, CellSettings } from "@/lib/experiments/run-cell";
-import { useGeminiDrawer } from "@/components/gemini-chat/GeminiDrawerProvider";
 
 // The experiment runner: pick an I/O signature → it filters the model list →
 // set up two cells that vary ONE axis (prompt or model) → run both → compare the
@@ -94,7 +93,6 @@ export default function ExperimentRunner() {
   const [B, setB] = useState<Slot>(IDLE);
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const gemini = useGeminiDrawer();
 
   // Reset model picks + results whenever the signature changes.
   useEffect(() => {
@@ -136,28 +134,6 @@ export default function ExperimentRunner() {
 
   const titleA = axis === "model" ? modelA || "Model A" : "Prompt A";
   const titleB = axis === "model" ? modelB || "Model B" : "Prompt B";
-
-  const bothDone = A.status === "done" && B.status === "done" && !!A.result && !!B.result;
-
-  // Push both outputs into the global Gemini drawer for analysis (user-initiated;
-  // Gemini is never in the run flow itself).
-  function onSendToGemini() {
-    if (!A.result || !B.result) return;
-    if (A.result.kind === "image" && B.result.kind === "image") {
-      const ctx =
-        axis === "model"
-          ? `Prompt (both):\n${sharedPrompt}`
-          : `Prompt A:\n${promptA}\n\nPrompt B:\n${promptB}`;
-      gemini.openWith({
-        text: `Compare these two generated icons — A = ${titleA}, B = ${titleB}. Which is the better icon, and why?\n\n${ctx}`,
-        images: [A.result.image!, B.result.image!],
-      });
-    } else {
-      gemini.openWith({
-        text: `Compare these two outputs and tell me which is better, and why.\n\n[A — ${titleA}]\n${A.result.text ?? ""}\n\n[B — ${titleB}]\n${B.result.text ?? ""}`,
-      });
-    }
-  }
 
   const selectCls =
     "rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 focus:border-cyan-500/50 focus:outline-none";
@@ -329,15 +305,6 @@ export default function ExperimentRunner() {
         <CellCard title={titleA} slot={A} />
         <CellCard title={titleB} slot={B} />
       </div>
-
-      {bothDone && (
-        <button
-          onClick={onSendToGemini}
-          className="self-end rounded-lg border border-cyan-700/50 bg-cyan-950/40 px-4 py-2 text-sm font-medium text-cyan-300 transition-colors hover:bg-cyan-900/40 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        >
-          ✦ Send results to Gemini
-        </button>
-      )}
     </div>
   );
 }

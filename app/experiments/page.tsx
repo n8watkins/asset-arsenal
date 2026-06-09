@@ -4,9 +4,8 @@ import ExperimentRunner from "@/components/experiments/ExperimentRunner";
 export const metadata = { title: "Experiments · Asset Arsenal" };
 
 // The experiment runner: set up a comparison (one prompt across two models, or
-// two prompts on one model), run it, and see outputs side by side. Gemini lives
-// in the global drawer (bottom-left "✦ Gemini") — run, then hit "Send to Gemini"
-// on the results to analyze them there. Isolated from the test benches.
+// two prompts on one model), run it, and see outputs side by side. Isolated from
+// the test benches. (The Gemini analysis sidebar is parked for now.)
 
 export default function ExperimentsPage() {
   return (
@@ -19,7 +18,7 @@ export default function ExperimentsPage() {
             <p className="max-w-2xl text-sm text-zinc-400">
               Pick what goes in and what comes out, then run the same prompt
               across two models — or two prompts on one model — and compare the
-              outputs. Then “Send to Gemini” to analyze them in the side drawer.
+              outputs side by side.
             </p>
           </div>
           <ExperimentRunner />
