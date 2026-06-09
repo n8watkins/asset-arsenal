@@ -38,7 +38,7 @@ export default function LandingPage() {
 
       {/* Hero */}
       <div className="glow grid-texture relative overflow-hidden">
-        <Container className="pt-20 pb-16 sm:pt-28 sm:pb-20">
+        <Container className="pt-16 pb-12 sm:pt-24 sm:pb-20 lg:pt-28">
           <div className="mx-auto max-w-3xl text-center">
             <div className="flex justify-center">
               <Badge className="mb-6 border-primary/30 bg-primary/10 text-foreground/90">
@@ -46,18 +46,28 @@ export default function LandingPage() {
                 AI-assisted icon packs
               </Badge>
             </div>
-            <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-6xl">
+            <h1 className="text-balance text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl sm:leading-tight lg:text-6xl">
               <span className="text-foreground">Turn AI design images into </span>
               <span className="text-gradient">reusable icon packs.</span>
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted">
+            <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted sm:mt-6 sm:text-lg">
               {SITE.description}
             </p>
-            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <ButtonLink href="/app/new" variant="primary" size="lg">
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:mt-9 sm:flex-row">
+              <ButtonLink
+                href="/app/new"
+                variant="primary"
+                size="lg"
+                className="w-full sm:w-auto"
+              >
                 Upload your first image
               </ButtonLink>
-              <ButtonLink href="/examples" variant="secondary" size="lg">
+              <ButtonLink
+                href="/examples"
+                variant="secondary"
+                size="lg"
+                className="w-full sm:w-auto"
+              >
                 See examples
               </ButtonLink>
             </div>
@@ -77,7 +87,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="mx-auto mt-16 max-w-5xl">
+          <div className="mx-auto mt-12 max-w-5xl sm:mt-16">
             <BeforeAfter />
           </div>
         </Container>
@@ -193,7 +203,7 @@ export default function LandingPage() {
       {/* Final CTA */}
       <Section className="section-divider">
         <Container>
-          <div className="glow inner-glow grid-texture relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-b from-surface-2 to-surface px-6 py-16 text-center sm:px-12">
+          <div className="glow inner-glow grid-texture relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-b from-surface-2 to-surface px-5 py-12 text-center sm:px-12 sm:py-16">
             <Badge className="mb-5 border-primary/40 bg-primary/15 text-foreground/90">
               <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
               {SIGNUP_FREE_CREDITS} free icons to start
@@ -205,10 +215,20 @@ export default function LandingPage() {
               Upload one image and see your matched icon set in minutes.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <ButtonLink href="/app/new" variant="primary" size="lg">
+              <ButtonLink
+                href="/app/new"
+                variant="primary"
+                size="lg"
+                className="w-full sm:w-auto"
+              >
                 Upload your first image
               </ButtonLink>
-              <ButtonLink href="/pricing" variant="secondary" size="lg">
+              <ButtonLink
+                href="/pricing"
+                variant="secondary"
+                size="lg"
+                className="w-full sm:w-auto"
+              >
                 View pricing
               </ButtonLink>
             </div>
