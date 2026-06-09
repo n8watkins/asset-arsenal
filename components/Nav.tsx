@@ -12,6 +12,7 @@ type Tab = { href: string; label: string };
 // folded into /roadmap.
 const TABS: Tab[] = [
   { href: "/gallery", label: "Gallery" },
+  { href: "/bench-router", label: "Router" },
   { href: "/bench-s", label: "Bench S" },
   { href: "/bench", label: "Bench" },
   { href: "/bench-v2", label: "Bench V2" },
