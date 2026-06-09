@@ -8,7 +8,6 @@ export const SITE = {
   tagline: "Turn AI design images into reusable icon packs.",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://assetarsenal.app",
   twitter: "@assetarsenal",
-  ogImage: "/og.png",
 } as const;
 
 /** Public nav links shown in the marketing header. */

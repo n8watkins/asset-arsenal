@@ -13,7 +13,7 @@ function jsonLd() {
     name: SITE.name,
     url: SITE.url,
     description: SITE.description,
-    logo: `${SITE.url}${SITE.ogImage}`,
+    logo: `${SITE.url}/icon.svg`,
     sameAs: [`https://twitter.com/${SITE.twitter.replace(/^@/, "")}`],
   };
 
