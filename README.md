@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Asset Arsenal — Web
 
-## Getting Started
+Pack-based icon-asset website. Upload a design image → detect the icon system →
+generate matching standalone icons → download the pack. This is the **website /
+front-end** (marketing, auth, pricing, checkout, account). The generation
+pipeline is **stubbed** behind the API — it returns mock manifests/icons so the
+whole flow is clickable with zero secrets.
 
-First, run the development server:
+> Isolated project. It does **not** connect to the `asset-arsenal` pipeline repo.
+
+## Stack
+
+| Concern        | Choice                                      |
+| -------------- | ------------------------------------------- |
+| Framework/host | Next.js 16 (App Router, Turbopack) / Vercel |
+| Auth           | Auth.js v5 + Google provider                |
+| Database       | Turso (libSQL/SQLite) + Drizzle ORM         |
+| Image storage  | Cloudflare R2 (S3 API, $0 egress)           |
+| Payments       | Stripe Checkout (one-time credit packs)     |
+| Analytics      | Vercel Analytics + GA4                      |
+
+## Demo mode
+
+With **no env vars set**, the app runs in demo mode: a mock user with 5 credits,
+mock pipeline responses, and graceful "not configured" states for auth/Stripe/
+storage. Every page renders; nothing crashes. Configure secrets (see
+`.env.example`) to light up each feature — gated by `features.*` in `lib/env.ts`.
+
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # production build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Pricing / credit model
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**1 credit = 1 generated icon.** Pipeline overhead is baked into the pack price.
+Source of truth: [`lib/pricing.ts`](lib/pricing.ts). Rationale + math:
+[`docs/PRICING.md`](docs/PRICING.md).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Layout
 
-## Learn More
+```
+app/(marketing)/   landing, pricing, examples, legal             (public)
+app/(app)/         dashboard, new run, runs, credits, settings    (auth-gated)
+app/api/           auth, billing/checkout, stripe/webhook, uploads, runs, credits
+lib/               pricing, credits ledger, db (Drizzle), auth, stripe, storage/r2
+components/        ui (kit), marketing, app, seo, analytics
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Database
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx drizzle-kit push      # apply schema to Turso (needs TURSO_* env)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Schema: `lib/db/schema.ts` (Auth.js tables + credit ledger, runs, generated
+icons, usage events).

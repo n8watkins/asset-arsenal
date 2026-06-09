@@ -68,6 +68,10 @@ const authConfig: NextAuthConfig = {
       ]
     : [],
   adapter: buildAdapter(),
+  // Real secret in any configured env; a throwaway dev fallback keeps auth()
+  // from throwing MissingSecret in demo mode (production MUST set AUTH_SECRET).
+  secret: process.env.AUTH_SECRET ?? "dev-insecure-secret-asset-arsenal",
+  trustHost: true,
   session: { strategy: "database" },
   pages: {
     signIn: "/login",
