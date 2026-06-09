@@ -13,9 +13,7 @@ import type {
 // Type-only import (erased at runtime) — avoids a real cycle with usage-log,
 // which imports getDB() from here.
 import type { UsageEntry } from "@/lib/icon/usage-log";
-// Same pattern for the prompt-arena ledger (arena-store imports getDB from here).
-import type { ArenaExperiment } from "@/lib/gemini/arena-store";
-// And for the Gemini analysis chat sidebar.
+// Same pattern for the Gemini analysis chat sidebar.
 import type { GeminiChat } from "@/lib/gemini/chat-store";
 
 // ---- Stored record types ----
@@ -81,11 +79,6 @@ interface AssetArsenalDB extends DBSchema {
     value: UsageEntry;
     indexes: { "by-at": string };
   };
-  experiments: {
-    key: string;
-    value: ArenaExperiment;
-    indexes: { "by-at": string; "by-seq": number };
-  };
   chats: {
     key: string;
     value: GeminiChat;
@@ -131,14 +124,6 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
         if (!db.objectStoreNames.contains("usage")) {
           const usageStore = db.createObjectStore("usage", { keyPath: "id" });
           usageStore.createIndex("by-at", "at");
-        }
-
-        // experiments store (v3) — the prompt-arena ledger: raw Gemini
-        // response + parsed verdict + token usage, per comparison.
-        if (!db.objectStoreNames.contains("experiments")) {
-          const expStore = db.createObjectStore("experiments", { keyPath: "id" });
-          expStore.createIndex("by-at", "createdAt");
-          expStore.createIndex("by-seq", "seq");
         }
 
         // chats store (v4) — the Gemini analysis chat sidebar.
