@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   ICON_ANALYSIS_PROMPT,
   buildCollectionPromptComposer,
@@ -475,6 +475,8 @@ function ChainControl({
   done,
   error,
   blocked,
+  estCost,
+  iconCountUsed,
 }: {
   from: StepKey;
   onFrom: (s: StepKey) => void;
@@ -488,13 +490,16 @@ function ChainControl({
   done: StepKey[];
   error: string | null;
   blocked: string | null;
+  estCost: number;
+  iconCountUsed: number;
 }) {
   const fromIdx = CHAIN_ORDER.indexOf(from);
   const targetIdx = CHAIN_ORDER.indexOf(target);
-  const runLabel =
-    fromIdx === targetIdx
-      ? `▸ Run §${stepNum(from)}`
-      : `▸ Run §${stepNum(from)}–§${stepNum(target)}`;
+  const isSingle = fromIdx === targetIdx;
+  const includesIcons = targetIdx >= CHAIN_ORDER.indexOf("generateIcons");
+  const runLabel = isSingle
+    ? `▸ Run §${stepNum(from)}`
+    : `▸ Run §${stepNum(from)}–§${stepNum(target)}`;
 
   return (
     <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
@@ -553,6 +558,22 @@ function ChainControl({
         {blocked && <span className="text-zinc-500 text-sm">{blocked}</span>}
       </div>
 
+      {/* Estimated cost for exactly what this run covers. */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-zinc-500">Estimated cost for this run:</span>
+        <span
+          className="font-mono text-cyan-300"
+          title="Sum of the per-step estimates for the selected range, with the selected stack"
+        >
+          {fmtUsd(estCost)}
+        </span>
+        <span className="font-mono text-xs text-zinc-600">
+          {isSingle ? `§${stepNum(from)} only` : `§${stepNum(from)}–§${stepNum(target)}`}
+          {includesIcons &&
+            ` · ${iconCountUsed} icon${iconCountUsed === 1 ? "" : "s"} at §5`}
+        </span>
+      </div>
+
       {/* Progress strip. Steps inside the from→through range are active; steps
           before `from` are skipped (their output is reused from shared state). */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -583,13 +604,20 @@ function ChainControl({
       </div>
 
       <p className="text-zinc-600 text-xs">
-        Runs the selected range in order, feeding each output to the next —
-        steps before <span className="text-zinc-400">from</span> are skipped and
-        reuse whatever&apos;s already on the page (so you can run §1–§4, inspect,
-        then continue §5). Images persist to the gallery as they&apos;re made.
-        The icon count caps how many prompts §4 composes (so &ldquo;1&rdquo;
-        makes a one-icon request, not compose-all-then-pick). Each step is also
-        still runnable on its own below.
+        Runs the selected range straight through in order, feeding each output to
+        the next (no pause between steps — it stops only on an error). Steps
+        before <span className="text-zinc-400">from</span> are skipped and reuse
+        whatever&apos;s already on the page.{" "}
+        <span className="text-zinc-400">
+          To go one step at a time, set <em>from</em> and <em>through</em> to the
+          same step
+        </span>{" "}
+        — it runs just that step, then auto-advances to the next, so clicking{" "}
+        <span className="font-mono">Run</span> again walks the chain one step
+        forward each time (no scrolling needed). When the range finishes, images
+        persist to the gallery. The icon count caps how many prompts §4 composes
+        (so &ldquo;1&rdquo; makes a one-icon request, not compose-all-then-pick).
+        Each step is also still runnable on its own in the sections below.
       </p>
 
       {error && <ErrorMsg msg={error} />}
@@ -1365,6 +1393,25 @@ export default function BenchPage() {
   const [chainDone, setChainDone] = useState<StepKey[]>([]);
   const [chainError, setChainError] = useState<string | null>(null);
 
+  // Estimated cost of the selected range, with the selected stack. §5 scales
+  // with how many icons get generated — the chain caps that at `iconLimit`
+  // (falling back to the stack's iconCount when blank), so reflect that here.
+  const iconCountUsed = state.iconLimit ?? state.stack.iconCount;
+  const chainEst = useMemo(() => {
+    const fromIdx = CHAIN_ORDER.indexOf(chainFrom);
+    const targetIdx = CHAIN_ORDER.indexOf(chainTarget);
+    const effStack: Stack =
+      state.iconLimit != null
+        ? { ...state.stack, iconCount: state.iconLimit }
+        : state.stack;
+    let total = 0;
+    for (let i = fromIdx; i <= targetIdx; i++) {
+      const step = STEPS.find((s) => s.key === CHAIN_ORDER[i])!;
+      total += costForStep(step, effStack).cost;
+    }
+    return total;
+  }, [chainFrom, chainTarget, state.stack, state.iconLimit]);
+
   // Keep from ≤ through whichever end the user moves.
   const selectChainFrom = useCallback((s: StepKey) => {
     setChainFrom(s);
@@ -1552,6 +1599,8 @@ export default function BenchPage() {
             done={chainDone}
             error={chainError}
             blocked={missingForStart(chainFrom, state)}
+            estCost={chainEst}
+            iconCountUsed={iconCountUsed}
           />
 
           <Section1 state={state} patch={patch} />
