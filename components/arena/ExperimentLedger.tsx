@@ -52,6 +52,23 @@ function ExperimentRow({
         </button>
       </div>
 
+      {/* Image thumbnails for image-comparison experiments */}
+      {(exp.inputs.imageA || exp.inputs.imageB) && (
+        <div className="flex gap-2">
+          {[exp.inputs.imageA, exp.inputs.imageB].map((src, i) =>
+            src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={src}
+                alt={`image ${i === 0 ? "A" : "B"}`}
+                className="h-16 w-16 rounded-md border border-zinc-800 object-contain bg-zinc-900"
+              />
+            ) : null,
+          )}
+        </div>
+      )}
+
       <p className="line-clamp-2 text-sm text-zinc-400">{exp.judgment.rationale}</p>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">

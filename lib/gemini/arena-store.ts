@@ -7,8 +7,14 @@
 import { getDB } from "@/lib/storage/db";
 import type { TokenUsage } from "@/types/icon-pipeline";
 import type { PromptJudgment } from "./schemas/prompt-judgment.schema";
+import type { ImageJudgment } from "./schemas/image-judgment.schema";
 
 export type ArenaExperimentKind = "prompt-comparison" | "image-comparison";
+
+// Both verdicts share winner/confidence/criteria/rationale; the ledger renders
+// those generically. Kind-specific fields (distilledPrompt vs suggestions) are
+// shown conditionally.
+export type ArenaJudgment = PromptJudgment | ImageJudgment;
 
 export type ArenaExperiment = {
   id: string;
@@ -23,14 +29,17 @@ export type ArenaExperiment = {
   kind: ArenaExperimentKind;
   createdAt: string; // ISO timestamp
   model: string;
-  // The request side: prompts, intent, and (later) image references.
+  // The request side. For image-comparison, imageA/imageB hold data URLs and
+  // promptA/promptB are optional context.
   inputs: {
-    promptA: string;
-    promptB: string;
+    promptA?: string;
+    promptB?: string;
     intent?: string;
+    imageA?: string;
+    imageB?: string;
   };
-  // The parsed, validated verdict. (Union widens when image judging lands.)
-  judgment: PromptJudgment;
+  // The parsed, validated verdict (prompt- or image-comparison).
+  judgment: ArenaJudgment;
   // The raw Gemini response text, verbatim — the direct API JSON.
   raw: string;
   usage?: TokenUsage;
@@ -78,7 +87,7 @@ export async function saveExperiment(input: {
   kind: ArenaExperimentKind;
   model: string;
   inputs: ArenaExperiment["inputs"];
-  judgment: PromptJudgment;
+  judgment: ArenaJudgment;
   raw: string;
   usage?: TokenUsage;
   tag?: string;

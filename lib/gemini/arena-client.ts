@@ -3,10 +3,17 @@
 
 import type { TokenUsage } from "@/types/icon-pipeline";
 import type { PromptJudgment } from "./schemas/prompt-judgment.schema";
+import type { ImageJudgment } from "./schemas/image-judgment.schema";
 
 export type JudgePromptsResponse = {
   judgment: PromptJudgment;
   // The raw Gemini response text, verbatim — stored in the experiment ledger.
+  raw: string;
+  usage?: TokenUsage;
+};
+
+export type JudgeImagesResponse = {
+  judgment: ImageJudgment;
   raw: string;
   usage?: TokenUsage;
 };
@@ -39,4 +46,16 @@ export function judgePrompts(args: {
   model?: string;
 }): Promise<JudgePromptsResponse> {
   return postJSON<JudgePromptsResponse>("/api/prompts/judge", args);
+}
+
+/** Compare two generated icon images (multimodal Gemini judge). */
+export function judgeImages(args: {
+  imageA: string;
+  imageB: string;
+  intent?: string;
+  promptA?: string;
+  promptB?: string;
+  model?: string;
+}): Promise<JudgeImagesResponse> {
+  return postJSON<JudgeImagesResponse>("/api/images/judge", args);
 }

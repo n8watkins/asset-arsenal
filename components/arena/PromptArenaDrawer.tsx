@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import PromptArena from "./PromptArena";
+import ArenaTabs from "./ArenaTabs";
 
 // Global pop-out drawer for the prompt arena, mounted in the root layout so you
 // can compare prompts from anywhere without leaving your flow. The launcher sits
@@ -31,7 +31,7 @@ export default function PromptArenaDrawer() {
             <div>
               <h3 className="text-sm font-semibold text-zinc-100">Prompt Arena</h3>
               <p className="mt-0.5 text-xs text-zinc-500">
-                Compare two icon prompts with Gemini — judged, not generated.
+                Compare prompts or images with Gemini — judged, not generated.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -56,7 +56,7 @@ export default function PromptArenaDrawer() {
 
           {/* Scrollable arena */}
           <div className="flex-1 overflow-y-auto px-5 py-5">
-            <PromptArena />
+            <ArenaTabs />
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import PromptArena from "./PromptArena";
+import ArenaTabs from "./ArenaTabs";
 import ExperimentLedger from "./ExperimentLedger";
 
 // Client wrapper for the full /arena view: the arena drives comparisons, the
@@ -11,7 +11,7 @@ export default function ArenaWorkspace() {
   const [refreshKey, setRefreshKey] = useState(0);
   return (
     <div className="flex flex-col gap-10">
-      <PromptArena onSaved={() => setRefreshKey((k) => k + 1)} />
+      <ArenaTabs onSaved={() => setRefreshKey((k) => k + 1)} />
       <ExperimentLedger refreshKey={refreshKey} />
     </div>
   );
