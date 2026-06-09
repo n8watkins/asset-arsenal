@@ -96,6 +96,6 @@ export const SIGNATURE_PRESETS: { io: IOSignature; title: string; desc: string }
   {
     io: { inputs: ["text", "image"], output: "text" },
     title: "Text + Image → Text",
-    desc: "Analyze, describe, or score an image. (This is where Gemini shines.)",
+    desc: "Run a vision model on an image — caption, extract, or describe it.",
   },
 ];
