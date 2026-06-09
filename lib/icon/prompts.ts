@@ -327,3 +327,46 @@ Output requirements:
 - reproduce only the icon family's style from the reference — never the reference's layout or background
 - make the icon reusable as a standalone asset`;
 }
+
+// ---------------------------------------------------------------------------
+// Bench V3 — grid pipeline
+// ---------------------------------------------------------------------------
+//
+// V3 shares V2's mega-analysis front, then generates ALL icons in ONE image: a
+// rows×cols grid on a transparent background, which is sliced locally into
+// individual icons. The prompt's layout discipline (even gutters, icons never
+// touching) is what makes downstream slicing reliable.
+
+export function buildGridGenerationPrompt(args: {
+  rows: number;
+  cols: number;
+  sharedStylePrompt: string;
+  icons: { name: string; concept: string; prompt: string }[];
+}): string {
+  const cells = args.rows * args.cols;
+  const list = args.icons
+    .map((ic, i) => `${i + 1}. ${ic.name} — ${ic.prompt}`)
+    .join("\n");
+
+  return `Create ONE image: a ${args.rows}×${args.cols} grid of ${args.icons.length} distinct icons on a fully transparent background.
+
+Use the attached reference image ONLY to understand the icon family's visual style — colors, stroke weight, proportions, shape language, finish. Ignore the reference's layout, cards, charts, text, and surrounding UI; reproduce only the family style.
+
+Hard layout rules (critical — the grid will be sliced into separate icons):
+- Exactly ${args.rows} rows and ${args.cols} columns, evenly spaced.
+- One icon per cell, centered in its cell with generous padding.
+- Leave clear, fully transparent gutters between cells — icons must NOT touch each other or the image edges.
+- Transparent background everywhere except the icons themselves.
+- Every icon shares one consistent family style.
+- No labels, numbers, text, captions, grid lines, frames, cards, or backgrounds.${
+    args.icons.length < cells
+      ? `\n- There are fewer icons (${args.icons.length}) than cells (${cells}); leave the remaining cells completely empty and transparent.`
+      : ""
+  }
+
+Shared icon family style:
+${args.sharedStylePrompt}
+
+Icons, placed in reading order (left to right, top to bottom):
+${list}`;
+}
