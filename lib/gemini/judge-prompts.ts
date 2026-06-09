@@ -1,6 +1,7 @@
 import type { TokenUsage } from "@/types/icon-pipeline";
 import { GeminiError } from "./errors";
-import { getGeminiClient, DEFAULT_JUDGE_MODEL } from "./client";
+import { getGeminiClient } from "./client";
+import { DEFAULT_JUDGE_MODEL } from "./models";
 import {
   PromptJudgmentSchema,
   type PromptJudgment,
