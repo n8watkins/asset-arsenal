@@ -112,7 +112,8 @@ export default function UsagePage() {
             </Link>
           </div>
 
-          {/* Totals */}
+          {/* Totals — realized is the source of truth (actual billed tokens);
+              the estimate is just a muted pre-flight reference. */}
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="flex flex-col gap-1 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
               <span className="text-xs uppercase tracking-widest text-zinc-500">
@@ -122,27 +123,29 @@ export default function UsagePage() {
                 {totalCalls}
               </span>
             </div>
-            <div className="flex flex-col gap-1 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-              <span className="text-xs uppercase tracking-widest text-zinc-500">
-                Est. cost
-              </span>
-              <span className="font-mono text-3xl font-bold text-violet-300">
-                {usd(totalEst)}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-              <span className="text-xs uppercase tracking-widest text-zinc-500">
+            <div className="flex flex-col gap-1 rounded-2xl border border-cyan-700/40 bg-cyan-950/20 p-6 ring-1 ring-cyan-500/20">
+              <span className="text-xs uppercase tracking-widest text-cyan-500/80">
                 Realized cost
               </span>
               <span className="font-mono text-3xl font-bold text-cyan-300">
                 {usd(totalRealized)}
               </span>
-              {hasPartialRealized && (
-                <span className="text-xs text-amber-400/70">
-                  partial — text calls only have realized cost once run with token
-                  usage; image calls are exact.
-                </span>
-              )}
+              <span className="text-xs text-zinc-500">
+                {hasPartialRealized
+                  ? "partial — a few calls haven't reported token usage yet."
+                  : "actual billed tokens — exact."}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1 rounded-2xl border border-zinc-800/70 bg-zinc-900/40 p-6">
+              <span className="text-xs uppercase tracking-widest text-zinc-600">
+                Est. (pre-flight)
+              </span>
+              <span className="font-mono text-2xl font-semibold text-zinc-500">
+                {usd(totalEst)}
+              </span>
+              <span className="text-xs text-zinc-600">
+                rough guess before each call — superseded by realized.
+              </span>
             </div>
           </section>
 
@@ -264,12 +267,15 @@ export default function UsagePage() {
           </section>
 
           <p className="pb-6 text-xs text-zinc-600">
-            Cost figures use the same model as the{" "}
+            Cost figures use the same pricing table as the{" "}
             <Link href="/models" className="text-zinc-500 hover:text-cyan-400">
               Models
             </Link>{" "}
-            page. Image per-image prices are exact; text estimates use per-step
-            token estimates until a call reports real token usage.
+            page. <span className="text-zinc-500">Realized</span> is exact — image
+            prices are per-image, and text/vision is priced from the real token
+            usage OpenAI reports on every call. The pre-flight estimate is only a
+            rough preview (it can&apos;t know output length until the model writes
+            it) and is replaced by realized once the call runs.
           </p>
         </div>
       </main>
