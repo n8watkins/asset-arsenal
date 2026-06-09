@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Button, Card } from "@/components/ui";
-import { getCurrentUser, isDemo } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -48,7 +48,7 @@ export default async function SettingsPage() {
           </span>
           <div className="min-w-0">
             <p className="truncate text-base font-semibold text-foreground">
-              {user.name ?? "Demo User"}
+              {user.name ?? "Account"}
             </p>
             <p className="truncate text-sm text-muted">{user.email ?? "—"}</p>
           </div>
@@ -80,17 +80,11 @@ export default async function SettingsPage() {
           <h2 className="text-sm font-medium text-foreground">Sign out</h2>
           <p className="text-xs text-muted">End your session on this device.</p>
         </div>
-        {isDemo ? (
-          <Button variant="secondary" disabled>
+        <form action={signOutAction}>
+          <Button type="submit" variant="secondary">
             Sign out
           </Button>
-        ) : (
-          <form action={signOutAction}>
-            <Button type="submit" variant="secondary">
-              Sign out
-            </Button>
-          </form>
-        )}
+        </form>
       </Card>
     </div>
   );

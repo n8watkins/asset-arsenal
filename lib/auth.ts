@@ -2,15 +2,20 @@
  * NextAuth v5 (beta) configuration.
  *
  * Exports the canonical `{ handlers, auth, signIn, signOut }` contract — other
- * agents import `auth` from `@/lib/auth`.
+ * modules import `auth` from `@/lib/auth`.
  *
- * Robustness: importing this module must NOT throw when env/db are absent.
- *  - The Drizzle adapter is given the db instance lazily (only built when auth
- *    is actually configured), so we never call getDb() at module top-level in a
- *    way that throws on a missing TURSO_DATABASE_URL.
- *  - When `features.auth` is false (no Google creds) we fall back to an empty
- *    providers array and no adapter, so the app surface stays viewable in demo
- *    mode without crashing.
+ * Auth model:
+ *  - Session strategy is JWT (required to support the Credentials provider).
+ *  - The Drizzle adapter is kept so OAuth (Google) users persist in the DB.
+ *  - Google provider is registered when AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET are
+ *    present.
+ *  - A dev-only "Dev Login" Credentials provider is registered ONLY when
+ *    NODE_ENV !== "production". It upserts a user by email (no password) so the
+ *    app is fully testable locally without Google OAuth. It is NEVER registered
+ *    in production.
+ *
+ * Robustness: importing this module must NOT throw, even if env/db are absent.
+ * DB access inside callbacks is wrapped in try/catch.
  */
 
 import NextAuth, {
@@ -18,6 +23,7 @@ import NextAuth, {
   type DefaultSession,
 } from "next-auth";
 import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { features } from "@/lib/env";
@@ -31,7 +37,7 @@ import {
 import { grantCredits } from "@/lib/credits";
 import { SIGNUP_FREE_CREDITS } from "@/lib/pricing";
 
-/* Augment the session user with our product fields. */
+/* Augment the session/jwt with our product fields. */
 declare module "next-auth" {
   interface Session {
     user: {
@@ -42,10 +48,12 @@ declare module "next-auth" {
   }
 }
 
+const isProd = process.env.NODE_ENV === "production";
+
 /**
- * Build the adapter only when both auth + db are configured. We pass the live
- * db instance, but constructing it is gated behind `features.db` so a missing
- * TURSO_DATABASE_URL can never throw at import time.
+ * Build the adapter only when a DB is available (always true in dev via the
+ * local file; in prod when TURSO_DATABASE_URL is set). Constructing it is gated
+ * behind `features.db` so it can never throw at import time.
  */
 function buildAdapter() {
   if (!features.db) return undefined;
@@ -57,44 +65,102 @@ function buildAdapter() {
   });
 }
 
+/**
+ * Dev-only Credentials provider. Upserts a user by email (no password) and
+ * grants the signup bonus to brand-new users. Returns the minimal user shape
+ * NextAuth needs to mint a JWT.
+ */
+function devCredentialsProvider() {
+  return Credentials({
+    id: "credentials",
+    name: "Dev Login",
+    credentials: { email: { label: "Email", type: "email" } },
+    async authorize(raw) {
+      const email =
+        typeof raw?.email === "string" ? raw.email.trim().toLowerCase() : "";
+      if (!email) return null;
+      if (!features.db) return null;
+
+      try {
+        const db = getDb();
+        const existing = await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.email, email))
+          .get();
+
+        if (existing) {
+          return {
+            id: existing.id,
+            email: existing.email ?? email,
+            name: existing.name ?? null,
+          };
+        }
+
+        // New dev user — insert and grant the signup bonus once.
+        const id = crypto.randomUUID();
+        const name = email.split("@")[0] || "Dev User";
+        await db.insert(users).values({ id, email, name });
+        try {
+          await grantCredits(id, SIGNUP_FREE_CREDITS, {
+            type: "free_grant",
+            description: "signup bonus",
+          });
+        } catch {
+          // Don't block dev login if the grant fails.
+        }
+        return { id, email, name };
+      } catch {
+        return null;
+      }
+    },
+  });
+}
+
+const providers: NextAuthConfig["providers"] = [];
+if (features.auth) {
+  providers.push(
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
+    }),
+  );
+}
+// Dev-only credentials login — NEVER registered in production.
+if (!isProd) {
+  providers.push(devCredentialsProvider());
+}
+
 const authConfig: NextAuthConfig = {
-  // Empty array when not configured → NextAuth import stays safe in demo mode.
-  providers: features.auth
-    ? [
-        Google({
-          clientId: process.env.AUTH_GOOGLE_ID,
-          clientSecret: process.env.AUTH_GOOGLE_SECRET,
-        }),
-      ]
-    : [],
+  providers,
   adapter: buildAdapter(),
   // Real secret in any configured env; a throwaway dev fallback keeps auth()
-  // from throwing MissingSecret in demo mode (production MUST set AUTH_SECRET).
+  // from throwing MissingSecret locally (production MUST set AUTH_SECRET).
   secret: process.env.AUTH_SECRET ?? "dev-insecure-secret-asset-arsenal",
   trustHost: true,
-  session: { strategy: "database" },
+  // JWT strategy is required to support the Credentials provider.
+  session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
   },
   callbacks: {
+    /** Persist the user id onto the token. */
+    async jwt({ token, user }) {
+      if (user?.id) token.id = user.id;
+      return token;
+    },
     /**
-     * Database-session callback. Attach product fields (id, creditsBalance,
-     * isAdmin) onto the session user. With the database strategy we receive the
-     * adapter `user`; we re-query for the freshest credit balance when possible.
+     * Attach product fields (id, creditsBalance, isAdmin) onto the session
+     * user. Read fresh credit balance / admin flag from the DB by id.
      */
-    async session({ session, user }) {
+    async session({ session, token }) {
       if (!session.user) return session;
-      if (user?.id) {
-        session.user.id = user.id;
-      }
+      const id = typeof token.id === "string" ? token.id : (token.sub ?? "");
+      session.user.id = id;
 
-      // Prefer fresh values from the db; fall back to whatever is on `user`.
-      let creditsBalance =
-        (user as { creditsBalance?: number } | undefined)?.creditsBalance ?? 0;
-      let isAdmin =
-        (user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;
-
-      if (features.db && user?.id) {
+      let creditsBalance = 0;
+      let isAdmin = false;
+      if (features.db && id) {
         try {
           const row = await getDb()
             .select({
@@ -102,24 +168,27 @@ const authConfig: NextAuthConfig = {
               isAdmin: users.isAdmin,
             })
             .from(users)
-            .where(eq(users.id, user.id))
+            .where(eq(users.id, id))
             .get();
           if (row) {
-            creditsBalance = row.creditsBalance ?? creditsBalance;
-            isAdmin = row.isAdmin ?? isAdmin;
+            creditsBalance = row.creditsBalance ?? 0;
+            isAdmin = row.isAdmin ?? false;
           }
         } catch {
-          // Non-fatal: keep adapter-provided values.
+          // Non-fatal: leave defaults.
         }
       }
-
       session.user.creditsBalance = creditsBalance;
       session.user.isAdmin = isAdmin;
       return session;
     },
   },
   events: {
-    /** Grant the signup bonus exactly once, when the user row is created. */
+    /**
+     * Grant the signup bonus exactly once when an OAuth (Google) user row is
+     * created via the adapter. (Dev credentials grants its own bonus in
+     * authorize() since it bypasses the adapter's createUser.)
+     */
     async createUser({ user }) {
       if (!features.db || !user?.id) return;
       try {

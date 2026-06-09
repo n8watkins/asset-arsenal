@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Button, ButtonLink, Card } from "@/components/ui";
+import { Button, Card } from "@/components/ui";
 import { SITE } from "@/lib/site";
 import { features } from "@/lib/env";
+import { DevLoginForm } from "./DevLoginForm";
 
 export const metadata: Metadata = {
   title: "Log in",
 };
+
+const isDev = process.env.NODE_ENV !== "production";
 
 async function signInWithGoogle() {
   "use server";
@@ -38,7 +41,7 @@ function GoogleGlyph() {
 }
 
 export default function LoginPage() {
-  const authConfigured = features.auth;
+  const googleConfigured = features.auth;
 
   return (
     <main className="relative flex min-h-dvh flex-1 items-center justify-center overflow-hidden px-5 py-16">
@@ -67,7 +70,7 @@ export default function LoginPage() {
           Turn design images into reusable icon packs.
         </p>
 
-        {authConfigured ? (
+        {googleConfigured ? (
           <form action={signInWithGoogle}>
             <Button type="submit" variant="secondary" size="lg" className="w-full">
               <GoogleGlyph />
@@ -75,24 +78,31 @@ export default function LoginPage() {
             </Button>
           </form>
         ) : (
-          <div className="space-y-4">
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              className="w-full"
-              disabled
-            >
-              <GoogleGlyph />
-              Continue with Google
-            </Button>
-            <p className="text-xs text-muted">
-              Auth not configured — using demo mode.
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            disabled
+          >
+            <GoogleGlyph />
+            Continue with Google
+          </Button>
+        )}
+
+        {isDev && (
+          <>
+            <div className="my-6 flex items-center gap-3 text-[11px] uppercase tracking-widest text-muted">
+              <span className="h-px flex-1 bg-border" />
+              Dev login
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <DevLoginForm />
+            <p className="mt-3 text-xs text-muted">
+              Development only — sign in with any email, no password. New emails
+              get the signup credits.
             </p>
-            <ButtonLink href="/app" variant="primary" size="md" className="w-full">
-              Enter demo app
-            </ButtonLink>
-          </div>
+          </>
         )}
 
         <p className="mt-8 text-xs text-muted">

@@ -4,7 +4,6 @@ import { desc, eq } from "drizzle-orm";
 import { Badge, ButtonLink, Card } from "@/components/ui";
 import { EmptyState } from "@/components/app/EmptyState";
 import { getCurrentUser } from "@/lib/session";
-import { features } from "@/lib/env";
 import { getDb } from "@/lib/db";
 import { iconRuns, type IconRun } from "@/lib/db/schema";
 import { cn } from "@/lib/cn";
@@ -33,7 +32,6 @@ function formatDate(ts: number | null | undefined): string {
 }
 
 async function loadRuns(userId: string): Promise<IconRun[]> {
-  if (!features.db) return [];
   try {
     return await getDb()
       .select()

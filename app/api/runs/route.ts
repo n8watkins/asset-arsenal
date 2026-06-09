@@ -3,15 +3,17 @@
  * Body: { sourceImageUrl?, sourceImageKey?, runId? }
  * Returns: { runId, iconManifest: { iconCount, icons: [...] } }
  *
- * Creates an icon run and runs the STUB "analyze" step. The real pipeline will
- * detect the icon system from the source image; for now we return a fixed,
- * plausible 12-icon manifest so the UI is fully exercisable. When a DB is
- * configured we persist an icon_run row (status "ready") with the manifest.
+ * Requires a logged-in user (401 otherwise). Creates an icon run and runs the
+ * STUB "analyze" step, returning a fixed 12-icon manifest so the UI is fully
+ * exercisable. Persists an icon_run row (status "ready") with the manifest.
+ *
+ * Abuse guard: a user may create at most MAX_RUNS_PER_HOUR runs per rolling
+ * hour (429 otherwise).
  */
 
 import { auth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
-import { features } from "@/lib/env";
+import { isOverRunRateLimit } from "@/lib/limits";
 
 /** Stub manifest — a believable dashboard icon system. */
 const STUB_ICONS = [
@@ -30,6 +32,19 @@ const STUB_ICONS = [
 ];
 
 export async function POST(req: Request) {
+  const userId = (await auth())?.user?.id;
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Abuse guard: cap runs per hour.
+  if (await isOverRunRateLimit(userId)) {
+    return Response.json(
+      { error: "Rate limit: too many runs this hour" },
+      { status: 429 },
+    );
+  }
+
   let body: {
     sourceImageUrl?: string;
     sourceImageKey?: string;
@@ -41,29 +56,25 @@ export async function POST(req: Request) {
     body = {};
   }
 
-  const userId = (await auth())?.user?.id ?? "demo-user";
   const iconManifest = { iconCount: STUB_ICONS.length, icons: STUB_ICONS };
 
   let runId = body.runId ?? crypto.randomUUID();
 
-  // Persist the run when a real DB is configured (skip for the demo user).
-  if (features.db && userId !== "demo-user") {
-    const db = getDb();
-    const inserted = await db
-      .insert(schema.iconRuns)
-      .values({
-        ...(body.runId ? { id: body.runId } : {}),
-        userId,
-        status: "ready",
-        sourceImageKey: body.sourceImageKey,
-        sourceImageUrl: body.sourceImageUrl,
-        iconManifest,
-        iconCount: iconManifest.iconCount,
-      })
-      .returning({ id: schema.iconRuns.id })
-      .get();
-    if (inserted?.id) runId = inserted.id;
-  }
+  const db = getDb();
+  const inserted = await db
+    .insert(schema.iconRuns)
+    .values({
+      ...(body.runId ? { id: body.runId } : {}),
+      userId,
+      status: "ready",
+      sourceImageKey: body.sourceImageKey,
+      sourceImageUrl: body.sourceImageUrl,
+      iconManifest,
+      iconCount: iconManifest.iconCount,
+    })
+    .returning({ id: schema.iconRuns.id })
+    .get();
+  if (inserted?.id) runId = inserted.id;
 
   return Response.json({ runId, iconManifest });
 }

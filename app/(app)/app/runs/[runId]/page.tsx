@@ -4,7 +4,6 @@ import { and, asc, eq } from "drizzle-orm";
 import { Badge, ButtonLink, Card } from "@/components/ui";
 import { EmptyState } from "@/components/app/EmptyState";
 import { getCurrentUser } from "@/lib/session";
-import { features } from "@/lib/env";
 import { getDb } from "@/lib/db";
 import {
   generatedIcons,
@@ -27,7 +26,6 @@ async function loadRun(
   runId: string,
   userId: string,
 ): Promise<{ run: IconRun; icons: GeneratedIcon[] } | null> {
-  if (!features.db) return null;
   try {
     const db = getDb();
     const run = await db
@@ -65,11 +63,7 @@ export default async function RunPage({
         <BackLink />
         <EmptyState
           title="Run not available"
-          description={
-            features.db
-              ? "We couldn't find this run, or it doesn't belong to your account."
-              : "This is demo mode — runs aren't persisted without a database configured."
-          }
+          description="We couldn't find this run, or it doesn't belong to your account."
           ctaHref="/app/new"
           ctaLabel="Start a new pack"
         />

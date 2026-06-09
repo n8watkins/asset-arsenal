@@ -1,21 +1,26 @@
 /**
  * POST /api/runs/[runId]/generate   (dynamic params are async in Next 16)
- * Body: { iconIds: string[] }
+ * Body: { iconIds: string[] }  OR  { icons: [{ key, name }] }
  * Returns: { runId, generatedIcons: [{ id, name, imageUrl }], creditsSpent }
  *
- * Cost model: 1 credit = 1 generated icon, so cost = iconIds.length.
+ * Requires a logged-in user (401 otherwise).
+ * Cost model: 1 credit = 1 generated icon, so cost = selected icon count.
+ * Credits are always spent (spendCredits) — InsufficientCreditsError → 402.
+ *
+ * Abuse guard: reject runs requesting more than MAX_ICONS_PER_RUN icons (400).
+ *
  * STUB: instead of calling an image model we synthesize a tiny inline SVG data
  * URL per icon (a colored rounded square with the icon's initial) so the
  * front-end can actually render and download something real.
- *
- * Credits are only spent when a DB is configured AND the user is not the demo
- * user — keeps the dev flow free and crash-proof.
  */
 
 import { auth } from "@/lib/auth";
-import { spendCredits, InsufficientCreditsError, getBalance } from "@/lib/credits";
+import {
+  spendCredits,
+  InsufficientCreditsError,
+} from "@/lib/credits";
 import { getDb, schema } from "@/lib/db";
-import { features } from "@/lib/env";
+import { MAX_ICONS_PER_RUN } from "@/lib/limits";
 
 const PALETTE = [
   "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308",
@@ -61,14 +66,35 @@ export async function POST(
 ) {
   const { runId } = await ctx.params;
 
-  let body: { iconIds?: string[] };
+  const userId = (await auth())?.user?.id;
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: {
+    iconIds?: string[];
+    icons?: Array<{ key?: string; name?: string }>;
+  };
   try {
     body = await req.json();
   } catch {
     body = {};
   }
 
-  const iconIds = Array.isArray(body.iconIds) ? body.iconIds : [];
+  // Accept either an array of ids, or the {key,name} objects the UI sends.
+  let iconIds: string[] = [];
+  const names = new Map<string, string>();
+  if (Array.isArray(body.iconIds)) {
+    iconIds = body.iconIds.filter((v): v is string => typeof v === "string");
+  } else if (Array.isArray(body.icons)) {
+    for (const icon of body.icons) {
+      if (icon?.key) {
+        iconIds.push(icon.key);
+        if (icon.name) names.set(icon.key, icon.name);
+      }
+    }
+  }
+
   if (iconIds.length === 0) {
     return Response.json(
       { error: "iconIds must be a non-empty array" },
@@ -76,54 +102,57 @@ export async function POST(
     );
   }
 
-  const userId = (await auth())?.user?.id ?? "demo-user";
+  // Abuse guard: cap icons per run.
+  if (iconIds.length > MAX_ICONS_PER_RUN) {
+    return Response.json(
+      { error: `Too many icons: max ${MAX_ICONS_PER_RUN} per run` },
+      { status: 400 },
+    );
+  }
+
   const cost = iconIds.length;
   let creditsSpent = 0;
 
-  // Spend credits only with a real DB + a real user. Demo/dev flow is free.
-  if (features.db && userId !== "demo-user") {
-    try {
-      await spendCredits(userId, cost, {
-        runId,
-        description: "icon generation",
-      });
-      creditsSpent = cost;
-    } catch (err) {
-      if (err instanceof InsufficientCreditsError) {
-        return Response.json(
-          {
-            error: "Insufficient credits",
-            needed: err.needed,
-            available: err.available,
-          },
-          { status: 402 },
-        );
-      }
-      throw err;
+  // Spend credits (the credit pre-check). Insufficient → 402.
+  try {
+    await spendCredits(userId, cost, {
+      runId,
+      description: "icon generation",
+    });
+    creditsSpent = cost;
+  } catch (err) {
+    if (err instanceof InsufficientCreditsError) {
+      return Response.json(
+        {
+          error: "Insufficient credits",
+          needed: err.needed,
+          available: err.available,
+        },
+        { status: 402 },
+      );
     }
+    throw err;
   }
 
   // Produce stub generated icons.
   const generatedIcons = iconIds.map((id) => {
-    const name = labelFor(id);
+    const name = names.get(id) ?? labelFor(id);
     return { id, name, imageUrl: placeholderIcon(`${runId}:${id}`, name) };
   });
 
-  // Persist generated icons when a DB is configured.
-  if (features.db && userId !== "demo-user") {
-    const db = getDb();
-    await db.insert(schema.generatedIcons).values(
-      generatedIcons.map((icon) => ({
-        runId,
-        userId,
-        iconKey: icon.id,
-        iconName: icon.name,
-        imageUrl: icon.imageUrl,
-        status: "success" as const,
-        creditCost: 1,
-      })),
-    );
-  }
+  // Persist generated icons + roll up the run's credit/icon totals.
+  const db = getDb();
+  await db.insert(schema.generatedIcons).values(
+    generatedIcons.map((icon) => ({
+      runId,
+      userId,
+      iconKey: icon.id,
+      iconName: icon.name,
+      imageUrl: icon.imageUrl,
+      status: "success" as const,
+      creditCost: 1,
+    })),
+  );
 
   return Response.json({ runId, generatedIcons, creditsSpent });
 }

@@ -14,6 +14,11 @@ import { SITE } from "@/lib/site";
 import { getStripe, priceArgsForPack } from "@/lib/stripe";
 
 export async function POST(req: Request) {
+  const userId = (await auth())?.user?.id;
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!features.stripe) {
     return Response.json({ error: "Checkout not configured" }, { status: 503 });
   }
@@ -40,9 +45,6 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-
-  // Resolve the buyer. Fall back to a demo user when auth is not configured.
-  const userId = (await auth())?.user?.id ?? "demo-user";
 
   const session = await getStripe().checkout.sessions.create({
     mode: "payment",

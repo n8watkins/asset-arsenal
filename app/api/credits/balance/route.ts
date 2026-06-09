@@ -1,21 +1,18 @@
 /**
  * GET /api/credits/balance
- * Returns: { balance }  — or { balance: 5, mock: true } in dev/demo.
+ * Returns: { balance } for the signed-in user.
  *
- * Reads the current user's credit balance from the ledger. Falls back to a mock
- * balance when there's no DB or no real authenticated user, so the UI shows
- * something sensible without secrets.
+ * Requires a logged-in user (401 otherwise). Reads the current balance from the
+ * credit ledger.
  */
 
 import { auth } from "@/lib/auth";
 import { getBalance } from "@/lib/credits";
-import { features } from "@/lib/env";
 
 export async function GET() {
-  const userId = (await auth())?.user?.id ?? "demo-user";
-
-  if (!features.db || userId === "demo-user") {
-    return Response.json({ balance: 5, mock: true });
+  const userId = (await auth())?.user?.id;
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const balance = await getBalance(userId);

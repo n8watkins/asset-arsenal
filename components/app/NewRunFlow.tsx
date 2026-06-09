@@ -153,12 +153,16 @@ export function NewRunFlow({ creditsBalance }: { creditsBalance: number }) {
       setError("Select at least one icon to generate.");
       return;
     }
+    if (!runId) {
+      setError("This run isn't ready yet. Please re-analyze your image.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setStep(4);
     try {
       const selected = manifest.filter((m) => m.include);
-      const res = await fetch(`/api/runs/${runId ?? "demo"}/generate`, {
+      const res = await fetch(`/api/runs/${runId}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

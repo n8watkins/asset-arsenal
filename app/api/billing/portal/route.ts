@@ -8,11 +8,17 @@
  * simple and guarded.
  */
 
+import { auth } from "@/lib/auth";
 import { features } from "@/lib/env";
 import { getStripe } from "@/lib/stripe";
 import { SITE } from "@/lib/site";
 
 export async function POST(req: Request) {
+  const userId = (await auth())?.user?.id;
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!features.stripe) {
     return Response.json({ error: "Billing not configured" }, { status: 503 });
   }

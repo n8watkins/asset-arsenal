@@ -1,12 +1,11 @@
 /**
  * Session helpers for the authenticated app surface.
  *
- * `getCurrentUser()` returns the signed-in user. When auth is NOT configured
- * (`features.auth` false) it returns a stable MOCK demo user so the whole app
- * surface is browsable in dev without OAuth. `isDemo` is true in that case.
+ * `getCurrentUser()` returns the signed-in user, or null when there is no
+ * session. There is NO demo / mock user — every app feature requires login.
  */
 
-import { features } from "@/lib/env";
+import { auth } from "@/lib/auth";
 
 export interface CurrentUser {
   id: string;
@@ -17,26 +16,8 @@ export interface CurrentUser {
   isAdmin: boolean;
 }
 
-/** True when running without auth configured — the app uses a demo user. */
-export const isDemo = !features.auth;
-
-const DEMO_USER: CurrentUser = {
-  id: "demo-user",
-  name: "Demo User",
-  email: "demo@assetarsenal.app",
-  creditsBalance: 5,
-  isAdmin: false,
-};
-
-/**
- * Returns the current user, or null when auth is configured but there is no
- * session. In demo mode (no auth configured) always returns the demo user.
- */
+/** Returns the current signed-in user, or null when there is no session. */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  if (isDemo) return DEMO_USER;
-
-  // Import lazily so demo mode never touches NextAuth internals.
-  const { auth } = await import("@/lib/auth");
   const session = await auth();
   if (!session?.user?.id) return null;
 
@@ -48,4 +29,12 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     creditsBalance: session.user.creditsBalance ?? 0,
     isAdmin: session.user.isAdmin ?? false,
   };
+}
+
+/**
+ * Returns the current user or null. Callers gate on null (redirect to /login in
+ * pages, 401 in API routes). Kept as a thin alias so intent reads clearly.
+ */
+export async function requireUser(): Promise<CurrentUser | null> {
+  return getCurrentUser();
 }

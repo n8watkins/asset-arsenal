@@ -19,7 +19,12 @@ export const features = {
     return Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   },
   get db() {
-    return Boolean(process.env.TURSO_DATABASE_URL);
+    // A usable DB always exists: production requires TURSO_DATABASE_URL, while
+    // development falls back to a local SQLite file (see lib/db/index.ts).
+    return (
+      Boolean(process.env.TURSO_DATABASE_URL) ||
+      process.env.NODE_ENV !== "production"
+    );
   },
   get stripe() {
     return Boolean(process.env.STRIPE_SECRET_KEY);
