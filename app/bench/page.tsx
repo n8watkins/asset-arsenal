@@ -88,7 +88,18 @@ type BenchState = {
   // Batch icons from the most recent run (manual §6 or a chain cascade), shared
   // so §6 reflects whatever last produced them.
   generatedIcons: GeneratedIcon[] | null;
+  // Cap on how many icons to compose prompts for (null = all). Applied at §4 so
+  // the request itself only asks for N — not compose-all-then-pick.
+  iconLimit: number | null;
 };
+
+// Truncate a manifest to its first N icons so §4 composes only N prompts
+// (cheaper, and the model can't overproduce). null/0 or N ≥ all → unchanged.
+function limitManifest(manifest: IconManifest, limit: number | null): IconManifest {
+  if (!limit || limit >= manifest.icons.length) return manifest;
+  const icons = manifest.icons.slice(0, limit);
+  return { ...manifest, icons, iconCount: icons.length };
+}
 
 // The five paid steps in chain order. A "run to §N" cascade executes these in
 // sequence from the source image up to (and including) the chosen target.
@@ -394,6 +405,8 @@ function StackPicker({
 function ChainControl({
   target,
   onTarget,
+  iconLimit,
+  onIconLimit,
   onRun,
   busy,
   currentStep,
@@ -403,6 +416,8 @@ function ChainControl({
 }: {
   target: StepKey;
   onTarget: (s: StepKey) => void;
+  iconLimit: number | null;
+  onIconLimit: (n: number | null) => void;
   onRun: () => void;
   busy: boolean;
   currentStep: StepKey | null;
@@ -431,6 +446,22 @@ function ChainControl({
             </option>
           ))}
         </select>
+        <span className="text-sm text-zinc-400">·</span>
+        <label className="text-sm text-zinc-400">icons</label>
+        <input
+          type="number"
+          min={1}
+          inputMode="numeric"
+          value={iconLimit ?? ""}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            onIconLimit(v === "" ? null : Math.max(1, Math.floor(Number(v)) || 1));
+          }}
+          placeholder="all"
+          disabled={busy}
+          title="How many icons to compose prompts for at §4 (blank = all)"
+          className="w-20 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+        />
         <RunButton
           onClick={onRun}
           busy={busy}
@@ -470,7 +501,9 @@ function ChainControl({
       <p className="text-zinc-600 text-xs">
         Runs every step from the source image up to the selected one, in order,
         feeding each output to the next — then persists images to the gallery.
-        Each step is also still runnable on its own below.
+        The icon count caps how many prompts §4 composes (so &ldquo;1&rdquo; makes a
+        one-icon request, not compose-all-then-pick). Each step is also still
+        runnable on its own below.
       </p>
 
       {error && <ErrorMsg msg={error} />}
@@ -855,6 +888,12 @@ function Section4({
     }
   };
 
+  // Apply the bench-wide icon cap: §4 only composes prompts for the first N.
+  const limited = limitManifest(parsed, state.iconLimit);
+  const limitedText = JSON.stringify(limited, null, 2);
+  const isLimited =
+    state.iconLimit != null && state.iconLimit < parsed.icons.length;
+
   const run = async () => {
     if (parseError || !state.collectionImageDataUrl) return;
     setBusy(true);
@@ -864,7 +903,7 @@ function Section4({
     try {
       const { individualPrompts, usage } = await composeIndividualPrompts({
         collectionImageBase64: state.collectionImageDataUrl,
-        manifest: parsed,
+        manifest: limited,
         model: state.stack.models.individualPrompts,
       });
       setResult(individualPrompts);
@@ -889,11 +928,18 @@ function Section4({
     >
       <PromptDisclosure
         label="View exact prompt sent to composer (live)"
-        prompt={buildIndividualPromptComposer(manifestText)}
+        prompt={buildIndividualPromptComposer(limitedText)}
       />
       <p className="text-zinc-500 text-sm italic">
         + the collection image (§3) is sent as image input alongside this prompt
       </p>
+      {isLimited && (
+        <p className="text-amber-300/80 text-sm">
+          Capped to the first {state.iconLimit} of {parsed.icons.length} icons
+          (set on the chain control above) — this request composes{" "}
+          {state.iconLimit} prompt{state.iconLimit === 1 ? "" : "s"}.
+        </p>
+      )}
       <button
         onClick={pull}
         disabled={!state.manifest}
@@ -1191,6 +1237,7 @@ export default function BenchPage() {
     collectionImageDataUrl: null,
     individualPrompts: null,
     generatedIcons: null,
+    iconLimit: null,
   });
 
   const patch = useCallback(
@@ -1292,7 +1339,7 @@ export default function BenchPage() {
         individualPrompts = (
           await composeIndividualPrompts({
             collectionImageBase64: collectionImage!,
-            manifest: manifest!,
+            manifest: limitManifest(manifest!, state.iconLimit),
             model: models.individualPrompts,
           })
         ).individualPrompts;
@@ -1380,6 +1427,8 @@ export default function BenchPage() {
           <ChainControl
             target={chainTarget}
             onTarget={setChainTarget}
+            iconLimit={state.iconLimit}
+            onIconLimit={(n) => patch({ iconLimit: n })}
             onRun={runChain}
             busy={chainBusy}
             currentStep={chainStep}
