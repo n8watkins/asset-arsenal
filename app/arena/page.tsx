@@ -1,5 +1,5 @@
 import Nav from "@/components/Nav";
-import PromptArena from "@/components/arena/PromptArena";
+import ArenaWorkspace from "@/components/arena/ArenaWorkspace";
 
 export const metadata = { title: "Prompt Arena · Asset Arsenal" };
 
@@ -24,7 +24,7 @@ export default function ArenaPage() {
               pipeline still does the generating.
             </p>
           </div>
-          <PromptArena />
+          <ArenaWorkspace />
         </div>
       </main>
     </>

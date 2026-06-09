@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { judgePrompts } from "@/lib/gemini/arena-client";
+import { saveExperiment } from "@/lib/gemini/arena-store";
 import { JUDGE_MODELS, DEFAULT_JUDGE_MODEL } from "@/lib/gemini/models";
 import type { PromptJudgment } from "@/lib/gemini/schemas/prompt-judgment.schema";
 
@@ -43,21 +44,26 @@ export interface PromptArenaProps {
   initialA?: string;
   initialB?: string;
   initialIntent?: string;
+  // Fired after an experiment is persisted, so a ledger can refresh.
+  onSaved?: () => void;
 }
 
 export default function PromptArena({
   initialA = "",
   initialB = "",
   initialIntent = "",
+  onSaved,
 }: PromptArenaProps) {
   const [promptA, setPromptA] = useState(initialA);
   const [promptB, setPromptB] = useState(initialB);
   const [intent, setIntent] = useState(initialIntent);
+  const [tag, setTag] = useState("");
   const [model, setModel] = useState<string>(DEFAULT_JUDGE_MODEL);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [judgment, setJudgment] = useState<PromptJudgment | null>(null);
+  const [savedLabel, setSavedLabel] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const canCompare = promptA.trim().length > 0 && promptB.trim().length > 0 && !loading;
@@ -66,9 +72,23 @@ export default function PromptArena({
     setLoading(true);
     setError(null);
     setJudgment(null);
+    setSavedLabel(null);
     try {
-      const { judgment } = await judgePrompts({ promptA, promptB, intent, model });
+      const { judgment, raw, usage } = await judgePrompts({ promptA, promptB, intent, model });
       setJudgment(judgment);
+      // Persist the full flow to the ledger: inputs, parsed verdict, raw JSON,
+      // and token usage. Deterministic label assigned in the store — no API call.
+      const exp = await saveExperiment({
+        kind: "prompt-comparison",
+        model,
+        inputs: { promptA, promptB, intent: intent.trim() || undefined },
+        judgment,
+        raw,
+        usage,
+        tag,
+      });
+      setSavedLabel(exp.label);
+      onSaved?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -135,6 +155,12 @@ export default function PromptArena({
             ))}
           </select>
         </div>
+        <input
+          value={tag}
+          onChange={(e) => setTag(e.target.value)}
+          placeholder="tag (optional)"
+          className="w-40 rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none"
+        />
         <button
           onClick={onCompare}
           disabled={!canCompare}
@@ -161,6 +187,11 @@ export default function PromptArena({
                 {Math.round(judgment.confidence * 100)}%
               </span>
             </span>
+            {savedLabel && (
+              <span className="ml-auto rounded-md bg-zinc-800/60 px-2 py-0.5 font-mono text-xs text-zinc-400">
+                saved · {savedLabel}
+              </span>
+            )}
           </div>
 
           {/* Per-criterion scores */}

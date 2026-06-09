@@ -13,6 +13,8 @@ import type {
 // Type-only import (erased at runtime) — avoids a real cycle with usage-log,
 // which imports getDB() from here.
 import type { UsageEntry } from "@/lib/icon/usage-log";
+// Same pattern for the prompt-arena ledger (arena-store imports getDB from here).
+import type { ArenaExperiment } from "@/lib/gemini/arena-store";
 
 // ---- Stored record types ----
 
@@ -77,6 +79,11 @@ interface AssetArsenalDB extends DBSchema {
     value: UsageEntry;
     indexes: { "by-at": string };
   };
+  experiments: {
+    key: string;
+    value: ArenaExperiment;
+    indexes: { "by-at": string; "by-seq": number };
+  };
 }
 
 // ---- Singleton ----
@@ -91,7 +98,7 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
   }
 
   if (!_dbPromise) {
-    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 2, {
+    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 3, {
       // Guarded creates → idempotent across versions; bumping the version runs
       // this again and only adds what's missing (existing data is untouched).
       upgrade(db) {
@@ -117,6 +124,14 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
         if (!db.objectStoreNames.contains("usage")) {
           const usageStore = db.createObjectStore("usage", { keyPath: "id" });
           usageStore.createIndex("by-at", "at");
+        }
+
+        // experiments store (v3) — the prompt-arena ledger: raw Gemini
+        // response + parsed verdict + token usage, per comparison.
+        if (!db.objectStoreNames.contains("experiments")) {
+          const expStore = db.createObjectStore("experiments", { keyPath: "id" });
+          expStore.createIndex("by-at", "createdAt");
+          expStore.createIndex("by-seq", "seq");
         }
       },
     });

@@ -6,6 +6,8 @@ import type { PromptJudgment } from "./schemas/prompt-judgment.schema";
 
 export type JudgePromptsResponse = {
   judgment: PromptJudgment;
+  // The raw Gemini response text, verbatim — stored in the experiment ledger.
+  raw: string;
   usage?: TokenUsage;
 };
 

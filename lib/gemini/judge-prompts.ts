@@ -42,7 +42,7 @@ export async function judgePrompts(args: {
   promptB: string;
   intent?: string;
   model?: string;
-}): Promise<{ judgment: PromptJudgment; usage?: TokenUsage }> {
+}): Promise<{ judgment: PromptJudgment; raw: string; usage?: TokenUsage }> {
   const ai = getGeminiClient();
   const model = args.model ?? DEFAULT_JUDGE_MODEL;
 
@@ -98,5 +98,5 @@ export async function judgePrompts(args: {
       }
     : undefined;
 
-  return { judgment: result.data, usage };
+  return { judgment: result.data, raw, usage };
 }

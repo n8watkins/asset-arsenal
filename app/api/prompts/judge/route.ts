@@ -26,8 +26,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { judgment, usage } = await judgePrompts(parsed.data);
-    return Response.json({ judgment, usage });
+    const { judgment, raw, usage } = await judgePrompts(parsed.data);
+    return Response.json({ judgment, raw, usage });
   } catch (err) {
     console.error("[prompts/judge]", err);
     if (err instanceof GeminiError) {
