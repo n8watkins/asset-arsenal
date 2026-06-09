@@ -104,16 +104,16 @@ const COGS_ROWS = [
 // Fixed + scaling infrastructure cost — what it costs to RUN this as a product.
 const INFRA = [
   {
-    layer: "Image hosting + delivery",
-    driver: "GB stored + bandwidth + transforms. Icons are tiny (~50–200 KB).",
-    pick: "Cloudinary (chosen) — CDN + transforms + upload widget",
-    rough: "credit-based · generous free tier",
+    layer: "Object storage (assets)",
+    driver: "GB stored + bandwidth. Icons are tiny (~50–200 KB).",
+    pick: "Cloudflare R2 (chosen) — S3-compatible, zero egress",
+    rough: "~$0.015/GB-mo · $0 egress",
   },
   {
     layer: "Database (metadata)",
     driver: "Rows: runs, icons, usage ledger, users. Never blobs.",
-    pick: "Supabase Postgres",
-    rough: "free → ~$25/mo Pro",
+    pick: "Turso (libSQL/SQLite, edge)",
+    rough: "generous free tier",
   },
   {
     layer: "Compute — generation",
@@ -130,8 +130,8 @@ const INFRA = [
   {
     layer: "Auth",
     driver: "Per-user libraries + billing identity.",
-    pick: "Supabase Auth",
-    rough: "free",
+    pick: "TBD — Turso bundles no auth (Better Auth / Clerk / Lucia)",
+    rough: "free tiers",
   },
 ];
 
@@ -139,8 +139,8 @@ const INFRA = [
 const ROADMAP = [
   {
     n: 1,
-    title: "Persistence → server (Postgres + Cloudinary)",
-    why: "Today everything is IndexedDB — per-device and ephemeral. This is the foundation everything else needs: runs/icons/usage as rows in Postgres, assets in Cloudinary, joined by keys.",
+    title: "Persistence → server (Turso + R2)",
+    why: "Today everything is IndexedDB — per-device and ephemeral. This is the foundation everything else needs: runs/icons/usage as rows in Turso, assets in Cloudflare R2, joined by keys.",
     depends: "nothing — start here",
   },
   {
@@ -349,7 +349,7 @@ export default function RoadmapPage() {
             <ul className="flex list-disc flex-col gap-2 pl-5 text-sm text-zinc-300">
               <li>
                 <strong className="text-zinc-100">Store individual PNGs</strong> in object
-                storage; <strong className="text-zinc-100">metadata in Postgres</strong>.
+                storage; <strong className="text-zinc-100">metadata in Turso</strong>.
                 Never put image bytes in the database.
               </li>
               <li>
@@ -362,11 +362,10 @@ export default function RoadmapPage() {
                 zips; they&apos;re derived and go stale.
               </li>
               <li>
-                <strong className="text-zinc-100">Hosting: Cloudinary (chosen)</strong> — CDN,
-                on-the-fly transforms, and an upload widget the front end wires up
-                fast. Trade-off: credit-based pricing is less predictable at scale.
-                Future lever: move raw storage to R2 (zero egress) and keep
-                Cloudinary only for delivery if credits balloon.
+                <strong className="text-zinc-100">Storage: Cloudflare R2 (chosen)</strong> —
+                S3-compatible object storage with zero egress fees, served via CDN.
+                Trade-off vs Cloudinary: no managed transforms/DAM, so do any image
+                optimization ourselves — in exchange for much cheaper, predictable cost.
               </li>
             </ul>
             <p className="text-xs text-zinc-500">

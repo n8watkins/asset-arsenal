@@ -58,11 +58,11 @@ Image calls dominate; text/vision is a rounding error. Numbers track the
 
 | Layer | What drives it | Choice | Rough |
 |---|---|---|---|
-| Image hosting + delivery | GB stored + bandwidth + transforms | **Cloudinary (chosen)** | credit-based; generous free tier |
-| Database (metadata) | rows: runs, icons, usage, users — never blobs | Supabase Postgres | free → ~$25/mo |
+| Object storage (assets) | GB stored + bandwidth | **Cloudflare R2 (chosen)** | ~$0.015/GB-mo · $0 egress |
+| Database (metadata) | rows: runs, icons, usage, users — never blobs | **Turso (libSQL/SQLite, edge)** | generous free tier |
 | Compute — generation | long awaits on OpenAI (seconds × N); watch fn timeouts | background queue, not request-thread | queue free tiers |
 | Compute — slicing (V3) | `sharp` native binary; few ms CPU, bundle weight on serverless | Vercel fn now → worker if it bloats | negligible |
-| Auth | per-user libraries + billing identity | Supabase Auth | free |
+| Auth | per-user libraries + billing identity | TBD — Turso bundles no auth (Better Auth / Clerk / Lucia) | free tiers |
 
 **Unit economics:** `price = COGS + infra + margin`. Making COGS legible (2a) is
 what makes pricing a decision instead of a guess.
@@ -71,23 +71,23 @@ what makes pricing a decision instead of a guess.
 
 ## 3. Asset storage & delivery
 
-**Decision: Cloudinary** for image hosting/delivery (chosen — strong DX, built-in
-CDN, on-the-fly transforms/optimization, an upload widget the front end can wire
-up fast). The model:
+**Decision: Cloudflare R2 + Turso** (chosen). R2 = S3-compatible object storage
+with zero egress fees for the assets; Turso = libSQL/SQLite at the edge for
+metadata. The model:
 
-- **Store individual assets in Cloudinary; metadata in Postgres.** Never put
-  image bytes in the database — Postgres holds pointers (Cloudinary public_id /
-  URL), names, prompts, model, cost, timestamps, user_id.
+- **Store individual assets in R2; metadata in Turso.** Never put image bytes in
+  the database — Turso holds pointers (R2 object key / URL), names, prompts,
+  model, cost, timestamps, user_id.
 - **Host for a retention window** so users can browse/preview (longer for paid
   tiers), then expire.
 - **Zip on download** — build the archive on request from the hosted assets and
   stream it. Don't persist zips; they're derived and go stale.
 
-**Trade-off to watch:** Cloudinary is credit-based (storage + bandwidth +
-transformations bundled), so cost is less predictable at scale than raw object
-storage. **Future lever:** if credits balloon, move raw storage to Cloudflare R2
-(zero egress) and keep Cloudinary only for transforms/delivery — or drop it.
-Metadata-in-Postgres + zip-on-download don't change either way.
+**Trade-off vs Cloudinary:** R2 has no managed transforms/optimization/DAM, so
+any image processing (resize, format) is on us (or a CDN/worker layer) — in
+exchange for much cheaper, predictable storage and zero egress. **Note:** Turso
+(unlike Supabase) bundles no auth, so auth is a separate choice (Better Auth /
+Clerk / Lucia). Metadata-in-Turso + zip-on-download are stable regardless.
 
 > Today everything lives in browser IndexedDB (per-device, ephemeral). That's
 > the gap roadmap #1 closes.
@@ -96,8 +96,8 @@ Metadata-in-Postgres + zip-on-download don't change either way.
 
 ## 4. Backend roadmap (by dependency)
 
-1. **Persistence → server (Postgres + Cloudinary).** Foundation for everything:
-   runs/icons/usage as rows, assets in Cloudinary, joined by keys. *Depends on:
+1. **Persistence → server (Turso + R2).** Foundation for everything: runs/icons/
+   usage as rows in Turso, assets in Cloudflare R2, joined by keys. *Depends on:
    nothing — start here.*
 2. **Auth + per-user libraries.** Scope assets/history/billing to a user. *#1.*
 3. **Async generation queue + progress.** V2's N calls (and V3 grids) are slow and
