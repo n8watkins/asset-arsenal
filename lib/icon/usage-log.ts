@@ -3,6 +3,23 @@
 
 import type { StepKey, ImageQuality } from "@/lib/icon/model-reference";
 
+// The actual output a call produced, stored alongside the request so /usage is a
+// results history, not just a call log. Text is inlined (capped for localStorage
+// safety); images are referenced by count — the bytes live in the gallery's
+// IndexedDB, not here.
+export type UsageResult =
+  | { kind: "text"; text: string; truncated?: boolean }
+  | { kind: "image"; count: number };
+
+// Cap inlined result text so a long manifest / prompt set can't blow the
+// localStorage quota across the capped log. Full fidelity returns with the DB.
+export const RESULT_TEXT_CAP = 8000;
+
+export function summarizeText(text: string): UsageResult {
+  if (text.length <= RESULT_TEXT_CAP) return { kind: "text", text };
+  return { kind: "text", text: text.slice(0, RESULT_TEXT_CAP), truncated: true };
+}
+
 export type UsageEntry = {
   id: string;
   at: string; // ISO timestamp
@@ -17,6 +34,7 @@ export type UsageEntry = {
   outputTokens?: number;
   ok: boolean;
   error?: string;
+  result?: UsageResult;
 };
 
 export const USAGE_LOG_KEY = "asset-arsenal:usage-log";

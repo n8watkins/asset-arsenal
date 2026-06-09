@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import { STEPS, type StepKey } from "@/lib/icon/model-reference";
-import { loadUsage, clearUsage, USAGE_LOG_CAP, type UsageEntry } from "@/lib/icon/usage-log";
+import {
+  loadUsage,
+  clearUsage,
+  USAGE_LOG_CAP,
+  type UsageEntry,
+  type UsageResult,
+} from "@/lib/icon/usage-log";
 
 function usd(n: number): string {
   if (n >= 1) return `$${n.toFixed(2)}`;
@@ -80,10 +86,11 @@ export default function UsagePage() {
           <div className="flex flex-col gap-3">
             <h1 className="text-3xl font-bold">API Usage</h1>
             <p className="max-w-2xl text-base text-zinc-400">
-              Every call to OpenAI made from this browser, with its estimated and
-              realized cost. Stored locally — nothing leaves your device. Keeps
-              the most recent {USAGE_LOG_CAP} calls (this becomes unlimited once
-              usage moves to a database).
+              Every call to OpenAI made from this browser — its estimated and
+              realized cost <em>and the result it produced</em> (prompts/manifests
+              inline; generated images saved to the gallery). Stored locally —
+              nothing leaves your device. Keeps the most recent {USAGE_LOG_CAP}{" "}
+              calls (this becomes unlimited once usage moves to a database).
             </p>
             <Link
               href="/models"
@@ -171,9 +178,9 @@ export default function UsagePage() {
                   </thead>
                   <tbody>
                     {entries.map((e) => (
+                      <Fragment key={e.id}>
                       <tr
-                        key={e.id}
-                        className="border-b border-zinc-800/60 align-top hover:bg-zinc-950/40"
+                        className="align-top hover:bg-zinc-950/40"
                       >
                         <td className="whitespace-nowrap px-3 py-2 text-zinc-400">
                           {fmtTime(e.at)}
@@ -231,6 +238,12 @@ export default function UsagePage() {
                           )}
                         </td>
                       </tr>
+                      <tr className="border-b border-zinc-800/60">
+                        <td colSpan={9} className="px-3 pb-3">
+                          <ResultBlock result={e.result} ok={e.ok} />
+                        </td>
+                      </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -249,6 +262,40 @@ export default function UsagePage() {
         </div>
       </main>
     </>
+  );
+}
+
+// Shows what a call actually produced. Text results expand in place; image
+// results are summarised (the bytes themselves live in the gallery).
+function ResultBlock({ result, ok }: { result?: UsageResult; ok: boolean }) {
+  if (!result) {
+    return (
+      <span className="text-xs text-zinc-600">
+        {ok ? "no stored result" : "—"}
+      </span>
+    );
+  }
+  if (result.kind === "image") {
+    return (
+      <span className="text-xs text-zinc-400">
+        🖼 {result.count} image{result.count === 1 ? "" : "s"} →{" "}
+        <Link href="/gallery" className="text-cyan-400/80 hover:text-cyan-300">
+          saved to gallery
+        </Link>
+      </span>
+    );
+  }
+  return (
+    <details className="group">
+      <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">
+        result ({result.text.length.toLocaleString()} chars
+        {result.truncated ? ", truncated" : ""}) — click to view
+      </summary>
+      <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300 whitespace-pre-wrap break-words">
+        {result.text}
+        {result.truncated ? "\n…(truncated — full result will be kept once usage moves to a database)" : ""}
+      </pre>
+    </details>
   );
 }
 
