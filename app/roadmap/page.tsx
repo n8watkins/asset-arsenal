@@ -104,16 +104,10 @@ const COGS_ROWS = [
 // Fixed + scaling infrastructure cost — what it costs to RUN this as a product.
 const INFRA = [
   {
-    layer: "Object storage (the PNGs)",
-    driver: "GB stored × months. Icons are tiny (~50–200 KB each).",
-    pick: "Supabase Storage now → Cloudflare R2 at scale",
-    rough: "~$0.015–0.023 / GB-mo · pennies at first",
-  },
-  {
-    layer: "Bandwidth / egress",
-    driver: "GB served when users browse / download. The sneaky-big line.",
-    pick: "R2 (zero egress) is the scale lever",
-    rough: "$0 on R2 · metered on Vercel/Supabase",
+    layer: "Image hosting + delivery",
+    driver: "GB stored + bandwidth + transforms. Icons are tiny (~50–200 KB).",
+    pick: "Cloudinary (chosen) — CDN + transforms + upload widget",
+    rough: "credit-based · generous free tier",
   },
   {
     layer: "Database (metadata)",
@@ -145,8 +139,8 @@ const INFRA = [
 const ROADMAP = [
   {
     n: 1,
-    title: "Persistence → server (Postgres + object storage)",
-    why: "Today everything is IndexedDB — per-device and ephemeral. This is the foundation everything else needs: runs/icons/usage as rows in Postgres, PNGs as objects in storage, joined by keys.",
+    title: "Persistence → server (Postgres + Cloudinary)",
+    why: "Today everything is IndexedDB — per-device and ephemeral. This is the foundation everything else needs: runs/icons/usage as rows in Postgres, assets in Cloudinary, joined by keys.",
     depends: "nothing — start here",
   },
   {
@@ -368,10 +362,11 @@ export default function RoadmapPage() {
                 zips; they&apos;re derived and go stale.
               </li>
               <li>
-                <strong className="text-zinc-100">Skip Cloudinary for now</strong> — it&apos;s a
-                transform/optimization CDN, but icons are already-final PNGs. Plain
-                object storage + CDN is cheaper for store-and-serve. Reach for R2
-                (zero egress) when bandwidth becomes the bill.
+                <strong className="text-zinc-100">Hosting: Cloudinary (chosen)</strong> — CDN,
+                on-the-fly transforms, and an upload widget the front end wires up
+                fast. Trade-off: credit-based pricing is less predictable at scale.
+                Future lever: move raw storage to R2 (zero egress) and keep
+                Cloudinary only for delivery if credits balloon.
               </li>
             </ul>
             <p className="text-xs text-zinc-500">
