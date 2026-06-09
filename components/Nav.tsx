@@ -11,6 +11,7 @@ type Tab = { href: string; label: string };
 const TABS: Tab[] = [
   { href: "/", label: "Home" },
   { href: "/gallery", label: "Gallery" },
+  { href: "/bench-s", label: "Bench S" },
   { href: "/bench", label: "Bench" },
   { href: "/bench-v2", label: "Bench V2" },
   { href: "/bench-v3", label: "Bench V3" },
@@ -18,6 +19,7 @@ const TABS: Tab[] = [
   { href: "/models", label: "Models" },
   { href: "/usage", label: "Usage" },
   { href: "/roadmap", label: "Roadmap" },
+  { href: "/backlog", label: "Backlog" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

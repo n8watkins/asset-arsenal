@@ -303,3 +303,33 @@ export type GenerateGridResponse = {
   detectedCount: number;
   mode: SliceMode;
 };
+
+// ---------------------------------------------------------------------------
+// Bench S — source generation (source → elevated "source material")
+// ---------------------------------------------------------------------------
+
+// A read of the source's EXISTING visual identity (not a redesign), used to
+// ground prompts and reusable later as a brand kit.
+export type StyleBrief = {
+  summary: string;
+  colorPalette: string[];
+  typography: string;
+  lineStyle: string;
+  shapeLanguage: string;
+  mood: string[];
+  strengths: string[];
+  improvements: string[]; // what a polished version should fix, identity preserved
+};
+
+// POST /api/icons/style-brief
+export type StyleBriefRequest = { imageBase64: string; model?: string };
+export type StyleBriefResponse = { brief: StyleBrief; usage?: TokenUsage };
+
+// POST /api/icons/elevate-source
+export type ElevateSourceRequest = {
+  imageBase64: string;
+  improvements?: string[];
+  model?: string;
+  quality?: "low" | "medium" | "high";
+};
+export type ElevateSourceResponse = { imageBase64: string };

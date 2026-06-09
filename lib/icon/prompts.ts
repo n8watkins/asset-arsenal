@@ -370,3 +370,46 @@ ${args.sharedStylePrompt}
 Icons, placed in reading order (left to right, top to bottom):
 ${list}`;
 }
+
+// ---------------------------------------------------------------------------
+// Bench S — source generation (source → elevated "source material")
+// ---------------------------------------------------------------------------
+//
+// Upstream of V2/V3: take the user's bland source (a screenshot/UI) and produce
+// (1) a STYLE BRIEF describing its existing identity and (2) an ELEVATED source
+// image — polished, NOT redesigned — to feed the icon benches. Both honor the
+// generalization rule: preserve the brand's own look, never impose a new one.
+
+export function buildStyleBriefPrompt(): string {
+  return `You are a senior brand & UI design analyst.
+
+Study the attached interface (a screenshot, website, or app UI) and produce a concise STYLE BRIEF of its EXISTING visual identity — not a redesign. Capture what the design already is, what works, and what a faithful "cleaned up" version should improve.
+
+Focus on the visual language an icon family would need to match: colors, type feel, line style, shape language, and overall mood. Do not invent or impose a new aesthetic.
+
+Return valid JSON only.
+
+Output JSON:
+{
+  "summary": "one-paragraph read of the current design's visual identity",
+  "colorPalette": ["#hex or color name", "..."],
+  "typography": "type feel — weights, contrast, character",
+  "lineStyle": "stroke / line treatment",
+  "shapeLanguage": "geometry, corner radius, density",
+  "mood": ["adjective", "..."],
+  "strengths": ["what already works", "..."],
+  "improvements": ["what a polished version should fix — de-noise, align, sharpen, declutter — WITHOUT changing the identity", "..."]
+}`;
+}
+
+export function buildSourceElevationPrompt(improvements?: string[]): string {
+  const focus =
+    improvements && improvements.length
+      ? `\n\nSpecifically address:\n- ${improvements.join("\n- ")}`
+      : "";
+  return `Produce a cleaner, higher-fidelity version of the attached interface that PRESERVES its existing visual identity — same colors, type feel, layout intent, and brand character.
+
+Improve only quality and clarity: sharpen, align, increase consistency, and remove compression artifacts, visual noise, and clutter. Do NOT redesign, restyle, rebrand, or impose any new aesthetic, theme, or trend. This is a polished reference of the SAME design, suitable as a clean style source for extracting an icon family.${focus}
+
+Output: one clean image with the same overall composition and identity as the source.`;
+}

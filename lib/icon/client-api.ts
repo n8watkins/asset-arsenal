@@ -17,6 +17,8 @@ import type {
   GenerateGridResponse,
   GenerateIconV2Item,
   SliceMode,
+  StyleBriefResponse,
+  ElevateSourceResponse,
   IconManifest,
   IndividualIconPrompt,
   IndividualIconPrompts,
@@ -297,6 +299,32 @@ export function generateGrid(args: {
   return tracked(
     { step: "generateIcons", kind: "image", model: args.model, quality: args.quality, count: 1 },
     () => postJSON<GenerateGridResponse>("/api/icons/generate-grid", args),
+    () => ({ kind: "image", count: 1 }),
+  );
+}
+
+// --- Bench S (source generation) ---
+
+// Step 1 — source image → style brief (vision). Logged under "analyze".
+export function analyzeStyleBrief(imageBase64: string, model?: string) {
+  return tracked(
+    { step: "analyze", kind: "text", model },
+    () => postJSON<StyleBriefResponse>("/api/icons/style-brief", { imageBase64, model }),
+    (r) => summarizeText(JSON.stringify(r.brief, null, 2)),
+  );
+}
+
+// Step 2 — source image → elevated source image. One image; logged under
+// "collectionImage" (a single full-image generation, like the collection image).
+export function elevateSource(args: {
+  imageBase64: string;
+  improvements?: string[];
+  model?: string;
+  quality?: ImageQuality;
+}) {
+  return tracked(
+    { step: "collectionImage", kind: "image", model: args.model, quality: args.quality, count: 1 },
+    () => postJSON<ElevateSourceResponse>("/api/icons/elevate-source", args),
     () => ({ kind: "image", count: 1 }),
   );
 }

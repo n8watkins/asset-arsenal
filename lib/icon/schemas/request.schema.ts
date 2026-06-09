@@ -90,3 +90,19 @@ export const GenerateGridRequestSchema = z.object({
   model: z.string().optional(),
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
+
+// --- Bench S (source generation) ---
+
+// POST /api/icons/style-brief
+export const StyleBriefRequestSchema = z.object({
+  imageBase64: z.string().min(1),
+  model: z.string().optional(),
+});
+
+// POST /api/icons/elevate-source
+export const ElevateSourceRequestSchema = z.object({
+  imageBase64: z.string().min(1),
+  improvements: z.array(z.string()).optional(),
+  model: z.string().optional(),
+  quality: z.enum(["low", "medium", "high"]).optional(),
+});
