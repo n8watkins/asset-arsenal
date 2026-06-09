@@ -14,9 +14,7 @@ import type {
   GenerateBatchResponse,
   MegaAnalyzeResponse,
   GenerateIconsV2Response,
-  GenerateGridResponse,
   GenerateIconV2Item,
-  SliceMode,
   StyleBriefResponse,
   ElevateSourceResponse,
   IconManifest,
@@ -279,27 +277,6 @@ export function generateIconsV2Batch(args: {
       kind: "image",
       count: r.generatedIcons.filter((g) => g.status === "success").length,
     }),
-  );
-}
-
-// --- Bench V3 (grid pipeline) ---
-
-// One grid image (so count = 1 — that's the whole cost), sliced locally into N
-// icons. Logged under "generateIcons" with count 1.
-export function generateGrid(args: {
-  referenceImageBase64: string;
-  sharedStylePrompt: string;
-  icons: GenerateIconV2Item[];
-  rows: number;
-  cols: number;
-  mode: SliceMode;
-  model?: string;
-  quality?: ImageQuality;
-}) {
-  return tracked(
-    { step: "generateIcons", kind: "image", model: args.model, quality: args.quality, count: 1 },
-    () => postJSON<GenerateGridResponse>("/api/icons/generate-grid", args),
-    () => ({ kind: "image", count: 1 }),
   );
 }
 

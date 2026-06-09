@@ -79,18 +79,6 @@ export const GenerateIconsV2RequestSchema = z.object({
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
 
-// POST /api/icons/generate-grid
-export const GenerateGridRequestSchema = z.object({
-  referenceImageBase64: z.string().min(1),
-  sharedStylePrompt: z.string(),
-  icons: z.array(GenerateIconV2ItemSchema).min(1).max(36),
-  rows: z.number().int().min(1).max(6),
-  cols: z.number().int().min(1).max(6),
-  mode: z.enum(["cv", "math"]),
-  model: z.string().optional(),
-  quality: z.enum(["low", "medium", "high"]).optional(),
-});
-
 // --- Bench S (source generation) ---
 
 // POST /api/icons/style-brief

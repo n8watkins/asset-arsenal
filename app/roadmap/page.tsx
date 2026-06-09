@@ -36,7 +36,6 @@ const perIcon = imageCostUSD(
 
 const COST_V1 = analyze + compose + collectionImg + indiv + perIcon * N;
 const COST_V2 = analyze + perIcon * N; // one analyze pass, N image calls
-const COST_V3 = analyze + perIcon * 1; // one analyze pass, one grid image
 
 function usd(n: number): string {
   return n >= 0.01 ? `$${n.toFixed(3)}` : `$${n.toFixed(4)}`;
@@ -78,27 +77,15 @@ const PIPELINES: Pipe[] = [
       "The source is a busy reference; its layout noise can leak into icons (mitigated by the wrapper telling the model to take only style, ignore layout).",
     cost: COST_V2,
   },
-  {
-    tag: "V3",
-    tone: "fuchsia",
-    href: "/bench-v3",
-    title: "Grid",
-    how: "Same analyze front as V2, then ALL icons in ONE 4×4 grid image, sliced locally (alpha-channel connected components, or fixed-grid math). One image call instead of N.",
-    theory:
-      "Per-icon image calls dominate cost. Generating the whole family in one image and cutting it locally is ~16× cheaper, and local slicing is free regardless of method.",
-    tradeoff:
-      "16 icons share one 1024² canvas → lower per-icon resolution; slicing has edge-cases (touching/split icons) reconciled against the known icon count.",
-    cost: COST_V3,
-  },
 ];
 
 // Per-run variable cost (COGS) — what each generation actually charges us.
 const COGS_ROWS = [
-  { label: "Analyze / mega-analyze (vision)", v1: usd(analyze), v2: usd(analyze), v3: usd(analyze) },
-  { label: "Compose collection prompt (text)", v1: usd(compose), v2: "—", v3: "—" },
-  { label: "Collection image (1 image)", v1: usd(collectionImg), v2: "—", v3: "—" },
-  { label: "Per-icon prompts (vision)", v1: usd(indiv), v2: "folded in", v3: "folded in" },
-  { label: `Icon images (${N} icons)`, v1: usd(perIcon * N), v2: usd(perIcon * N), v3: `${usd(perIcon)} (1 grid)` },
+  { label: "Analyze / mega-analyze (vision)", v1: usd(analyze), v2: usd(analyze) },
+  { label: "Compose collection prompt (text)", v1: usd(compose), v2: "—" },
+  { label: "Collection image (1 image)", v1: usd(collectionImg), v2: "—" },
+  { label: "Per-icon prompts (vision)", v1: usd(indiv), v2: "folded in" },
+  { label: `Icon images (${N} icons)`, v1: usd(perIcon * N), v2: usd(perIcon * N) },
 ];
 
 // Fixed + scaling infrastructure cost — what it costs to RUN this as a product.
@@ -120,12 +107,6 @@ const INFRA = [
     driver: "Long awaits on OpenAI (seconds × N). Watch function timeouts.",
     pick: "Background queue, not request-thread",
     rough: "queue free tiers (Inngest/Trigger.dev)",
-  },
-  {
-    layer: "Compute — slicing (V3)",
-    driver: "sharp is a native binary; a few ms CPU but bundle weight on serverless.",
-    pick: "Vercel fn now → separate worker if it bloats",
-    rough: "negligible CPU",
   },
   {
     layer: "Auth",
@@ -152,7 +133,7 @@ const ROADMAP = [
   {
     n: 3,
     title: "Async generation queue + progress",
-    why: "V2's N image calls (and even V3's grids) are slow and blow past serverless request limits. Move generation to a job; stream progress; survive partial failure with retries.",
+    why: "V2's N image calls are slow and blow past serverless request limits. Move generation to a job; stream progress; survive partial failure with retries.",
     depends: "#1",
   },
   {
@@ -216,12 +197,12 @@ const BACKLOG: BacklogItem[] = [
     n: 1,
     status: "next",
     title: "Regression / eval harness",
-    what: "A golden set of source images with known-good outputs, run through V1/V2/V3 on demand, scored and tracked over time.",
+    what: "A golden set of source images with known-good outputs, run through V1/V2 on demand, scored and tracked over time.",
     why: "Replaces eyeballing with data — actually answers 'does the collection image earn its cost?' and 'did this prompt edit help?'. Turns /experiments from a catalog into a measurement tool.",
     approach: [
       "~5–10 representative sources committed as fixtures.",
       "A 'run eval' action: execute a pipeline + variant across all fixtures, record cost / latency / icon count / success rate / outputs.",
-      "Scoring starts with thumbs up/down; add a cheap auto-signal later (vision-model consistency rating, or alpha-coverage / blob-count sanity for V3).",
+      "Scoring starts with thumbs up/down; add a cheap auto-signal later (vision-model consistency rating).",
       "Persist runs so two prompt versions compare side by side.",
     ],
     effort: "M–L",
@@ -261,7 +242,7 @@ const BACKLOG_ALSO: { status: Status; text: string }[] = [
   { status: "queued", text: "Export depth — SVG vectorization (raster→vector), size/padding presets, sprite sheets, style-token JSON." },
   { status: "queued", text: "Brand kits / style memory — save a style brief as a reusable brand, apply to future requests." },
   { status: "deferred", text: "Draft → final — cheap low-q preview pass, high-q only on keepers." },
-  { status: "deferred", text: "Side-by-side V1/V2/V3 on one source, scored (first user of the eval harness)." },
+  { status: "deferred", text: "Side-by-side V1/V2 on one source, scored (first user of the eval harness)." },
 ];
 
 function Badge({ status }: { status: Status }) {
@@ -291,13 +272,13 @@ export default function RoadmapPage() {
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-semibold">Pipeline shapes</h2>
               <p className="max-w-2xl text-sm text-zinc-400">
-                Three ways to run the same job, sharing prompts and models. The
-                open question across all three:{" "}
+                Two ways to run the same job, sharing prompts and models. The
+                open question across both:{" "}
                 <em className="text-zinc-300">does the collection image earn its cost?</em>{" "}
                 Costs below are model spend for a {N}-icon set on the cheapest stack.
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {PIPELINES.map((p) => (
                 <div key={p.tag} className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5">
                   <div className="flex items-center gap-2">
@@ -327,9 +308,9 @@ export default function RoadmapPage() {
               ))}
             </div>
             <p className="text-xs text-zinc-600">
-              V3 collapses V2&apos;s {N} image calls into 1 — that&apos;s {N}× cheaper on
-              the image line, and ≈{Math.round(COST_V2 / COST_V3)}× cheaper on the full
-              run once the fixed analyze pass is counted in.
+              V2 drops V1&apos;s two extra calls (compose + collection image) and
+              generates each icon against the source directly — fewer calls before
+              any icon exists, at the risk of the source&apos;s layout noise leaking in.
             </p>
           </section>
 
@@ -358,7 +339,6 @@ export default function RoadmapPage() {
                       <th className="px-4 py-2 font-medium">Call</th>
                       <th className="px-4 py-2 font-medium">V1</th>
                       <th className="px-4 py-2 font-medium">V2</th>
-                      <th className="px-4 py-2 font-medium">V3</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/70">
@@ -367,14 +347,12 @@ export default function RoadmapPage() {
                         <td className="px-4 py-2">{r.label}</td>
                         <td className="px-4 py-2 font-mono text-xs">{r.v1}</td>
                         <td className="px-4 py-2 font-mono text-xs">{r.v2}</td>
-                        <td className="px-4 py-2 font-mono text-xs">{r.v3}</td>
                       </tr>
                     ))}
                     <tr className="bg-zinc-900/60 font-semibold text-zinc-100">
                       <td className="px-4 py-2">Total / {N}-icon run</td>
                       <td className="px-4 py-2 font-mono text-xs">{usd(COST_V1)}</td>
                       <td className="px-4 py-2 font-mono text-xs">{usd(COST_V2)}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{usd(COST_V3)}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -154,9 +154,8 @@ export default function BenchSPage() {
               (your real screenshot/UI) into <strong className="text-zinc-200">source material</strong> —
               a style brief + an elevated, polished source image (identity preserved,
               not redesigned). The elevated image saves to the gallery, so{" "}
-              <Link href="/bench-v2" className="text-cyan-400/80 hover:text-cyan-300">Bench V2</Link>/
-              <Link href="/bench-v3" className="text-cyan-400/80 hover:text-cyan-300">V3</Link>{" "}
-              can use it as their reference.
+              <Link href="/bench-v2" className="text-cyan-400/80 hover:text-cyan-300">Bench V2</Link>{" "}
+              can use it as its reference.
             </p>
           </div>
 

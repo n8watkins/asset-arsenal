@@ -280,31 +280,6 @@ export type GenerateIconsV2Request = {
 export type GenerateIconsV2Response = { generatedIcons: GeneratedIcon[] };
 
 // ---------------------------------------------------------------------------
-// Bench V3 — grid pipeline (one grid image, sliced locally)
-// ---------------------------------------------------------------------------
-
-export type SliceMode = "cv" | "math";
-
-// POST /api/icons/generate-grid
-export type GenerateGridRequest = {
-  referenceImageBase64: string;
-  sharedStylePrompt: string;
-  icons: GenerateIconV2Item[]; // up to rows×cols, in reading order
-  rows: number;
-  cols: number;
-  mode: SliceMode;
-  model?: string;
-  quality?: "low" | "medium" | "high";
-};
-export type GenerateGridResponse = {
-  gridImageBase64: string; // the raw generated grid (for re-rolls / inspection)
-  generatedIcons: GeneratedIcon[]; // the sliced icons
-  expectedCount: number;
-  detectedCount: number;
-  mode: SliceMode;
-};
-
-// ---------------------------------------------------------------------------
 // Bench S — source generation (source → elevated "source material")
 // ---------------------------------------------------------------------------
 
