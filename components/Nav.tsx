@@ -8,8 +8,9 @@ import { usePathname } from "next/navigation";
 
 type Tab = { href: string; label: string };
 
+// Home is reached via the brand (top-left), so it's not a tab. Backlog is
+// folded into /roadmap.
 const TABS: Tab[] = [
-  { href: "/", label: "Home" },
   { href: "/gallery", label: "Gallery" },
   { href: "/bench-s", label: "Bench S" },
   { href: "/bench", label: "Bench" },
@@ -19,7 +20,6 @@ const TABS: Tab[] = [
   { href: "/models", label: "Models" },
   { href: "/usage", label: "Usage" },
   { href: "/roadmap", label: "Roadmap" },
-  { href: "/backlog", label: "Backlog" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

@@ -25,6 +25,16 @@ const STEP_LABEL: Record<StepKey, string> = STEPS.reduce(
   {} as Record<StepKey, string>,
 );
 
+// Pipeline position of each step, so the per-step rollup reads top-to-bottom in
+// run order (1→5) instead of by cost. Unknown steps sort last.
+const STEP_ORDER: Record<string, number> = STEPS.reduce(
+  (acc, s) => {
+    acc[s.key] = s.num;
+    return acc;
+  },
+  {} as Record<string, number>,
+);
+
 function fmtTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -73,7 +83,10 @@ export default function UsagePage() {
   const totalRealized = entries.reduce((s, e) => s + (e.realizedCost ?? 0), 0);
   const hasPartialRealized = entries.some((e) => e.ok && e.realizedCost == null);
 
-  const byStep = rollupBy(entries, (e) => e.step);
+  // Per step in pipeline order (1→5); per model stays sorted by cost.
+  const byStep = rollupBy(entries, (e) => e.step).sort(
+    (a, b) => (STEP_ORDER[a.key] ?? 99) - (STEP_ORDER[b.key] ?? 99),
+  );
   const byModel = rollupBy(entries, (e) => e.model);
 
   return (
