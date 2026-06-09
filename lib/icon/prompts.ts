@@ -221,3 +221,109 @@ Output requirements:
 - preserve the icon family style defined by the attached collection image and the shared style prompt — do not impose any other aesthetic
 - make the icon reusable as a standalone asset`;
 }
+
+// ---------------------------------------------------------------------------
+// Bench V2 — collapsed pipeline
+// ---------------------------------------------------------------------------
+//
+// V2 replaces §1+§2+§3+§4 with ONE vision pass (this composer) and then runs §5
+// against the ORIGINAL source image instead of a generated collection image.
+// The composer therefore has to do, in one shot, what §1 (analyze) and §4
+// (per-icon prompts) did separately — grounded only in the source image.
+
+export function buildMegaAnalysisComposer(): string {
+  return `You are an expert icon analyst AND icon prompt composer.
+
+You will receive a single source image — typically a product screenshot, dashboard, or UI. In ONE pass, do all of the following.
+
+1. Identify every meaningful icon in the image.
+An icon is a small symbolic visual element representing a concept, action, status, feature, metric, or object. Look for feature icons, metric icons, navigation icons, status icons, action icons, dashboard glyphs, and small symbolic UI marks.
+Rules:
+- Focus only on icons.
+- Ignore cards, charts, backgrounds, and full layout sections.
+- Ignore large illustrations unless they clearly function as icons.
+- If an icon is tiny, partially visible, or inferred, lower its confidence.
+- Group repeated icons into one icon type.
+- Ignore tiny unreadable text and pure decoration.
+
+2. Extract the shared icon family style as you interpret it from the image: color palette, line style, shape language, glow style, background rule, and negative rules. If a field does not apply (e.g. there is no glow), set glowStyle to null.
+
+3. Write a single sharedStylePrompt: one reusable style paragraph, derived ONLY from what you see in the image, suitable to prepend to every icon's generation prompt to keep the whole family consistent.
+
+4. For EACH icon, write one final image-generation prompt that produces a single, standalone, reusable 1:1 icon matching the family style.
+Each per-icon prompt must:
+- generate one icon only, centered, in a 1:1 square with generous padding
+- match the shared icon family style (stroke weight, proportions, padding, color treatment, finish)
+- include the icon's concept and key visual details
+- derive the style ONLY from the source image and the shared style fields — never from any assumed or predetermined aesthetic, theme, color scheme, or mood
+- avoid labels, numbers, fake text, captions, watermarks, dashboards, cards, charts, buttons, full UI screens, and extra decoration
+
+Give each icon a stable id like "icon_001", "icon_002", etc. Set iconCount to the number of icons you return.
+Return valid JSON only.
+
+Output JSON:
+{
+  "iconCount": number,
+  "sharedIconFamilyStyle": {
+    "colorPalette": [],
+    "lineStyle": "",
+    "shapeLanguage": "",
+    "glowStyle": "",
+    "backgroundRule": "",
+    "negativeRules": []
+  },
+  "sharedStylePrompt": "shared style paragraph to reuse in every generation",
+  "icons": [
+    {
+      "id": "icon_001",
+      "name": "short icon name",
+      "concept": "what the icon represents",
+      "whereVisible": "where it appears in the source image",
+      "visualDescription": "what it looks like",
+      "confidence": "high | medium | low",
+      "prompt": "final image-generation prompt for this single icon"
+    }
+  ],
+  "excludedAsNonIcons": []
+}`;
+}
+
+export function buildV2IconGenerationWrapper(args: {
+  sharedStylePrompt: string;
+  iconName: string;
+  iconConcept: string;
+  iconPrompt: string;
+}): string {
+  return `Create exactly one isolated, reusable icon asset.
+
+Use the attached reference image ONLY to understand the icon family's visual style — its colors, stroke weight, proportions, shape language, and finish. The reference may be a busy screenshot or dashboard; ignore its layout, cards, charts, text, and surrounding UI. Reproduce only the icon family's style, never the scene.
+
+Match the shared icon family style described below AND the style you interpret from the reference image. Derive the style only from those two sources; do not impose any predetermined aesthetic, theme, or background.
+
+Shared icon family style:
+${args.sharedStylePrompt}
+
+Icon to generate:
+${args.iconName}
+
+Icon concept:
+${args.iconConcept}
+
+Icon-specific prompt:
+${args.iconPrompt}
+
+Output requirements:
+- generate one icon only
+- 1:1 square composition
+- centered with generous padding
+- no text
+- no letters
+- no numbers
+- no label
+- no dashboard, card, chart, or button UI
+- no extra objects
+- no decorative clutter
+- transparent background if supported; otherwise a clean, neutral background
+- reproduce only the icon family's style from the reference — never the reference's layout or background
+- make the icon reusable as a standalone asset`;
+}

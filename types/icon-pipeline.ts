@@ -226,3 +226,55 @@ export type GenerateBatchRequest = {
   quality?: "low" | "medium" | "high";
 };
 export type GenerateBatchResponse = { generatedIcons: GeneratedIcon[] };
+
+// ---------------------------------------------------------------------------
+// Bench V2 — collapsed pipeline (mega-analyze → generate, source as reference)
+// ---------------------------------------------------------------------------
+
+// One vision pass merges §1 (analyze) and §4 (per-icon prompts): every icon
+// carries both its manifest fields and a ready-to-generate prompt, derived from
+// the source image alone (there is no collection image in V2).
+export type MegaAnalysisIcon = {
+  id: string;
+  name: string;
+  concept: string;
+  whereVisible: string;
+  visualDescription: string;
+  confidence: Confidence;
+  prompt: string; // final per-icon generation prompt
+};
+
+export type MegaAnalysis = {
+  iconCount: number;
+  sharedIconFamilyStyle: SharedIconFamilyStyle;
+  sharedStylePrompt: string;
+  icons: MegaAnalysisIcon[];
+  excludedAsNonIcons: string[];
+};
+
+// POST /api/icons/mega-analyze
+export type MegaAnalyzeRequest = {
+  imageBase64: string;
+  fileName?: string;
+  model?: string;
+};
+export type MegaAnalyzeResponse = { analysis: MegaAnalysis; usage?: TokenUsage };
+
+// The minimal per-icon payload §5 needs in V2 (no collectionImageReference —
+// the reference is the source image, not a collection image).
+export type GenerateIconV2Item = {
+  iconId: string;
+  iconName: string;
+  concept: string;
+  prompt: string;
+};
+
+// POST /api/icons/generate-icons-v2
+export type GenerateIconsV2Request = {
+  referenceImageBase64: string;
+  sharedStylePrompt: string;
+  icons: GenerateIconV2Item[];
+  model?: string;
+  quality?: "low" | "medium" | "high";
+};
+export type GenerateIconsV2Response = { generatedIcons: GeneratedIcon[] };

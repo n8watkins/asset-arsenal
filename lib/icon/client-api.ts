@@ -12,6 +12,9 @@ import type {
   ComposeIndividualPromptsResponse,
   GenerateOneResponse,
   GenerateBatchResponse,
+  MegaAnalyzeResponse,
+  GenerateIconsV2Response,
+  GenerateIconV2Item,
   IconManifest,
   IndividualIconPrompt,
   IndividualIconPrompts,
@@ -227,6 +230,47 @@ export function generateIconsBatch(args: {
       count: args.individualPrompts.iconPrompts.length,
     },
     () => postJSON<GenerateBatchResponse>("/api/icons/generate-batch", args),
+    (r) => ({
+      kind: "image",
+      count: r.generatedIcons.filter((g) => g.status === "success").length,
+    }),
+  );
+}
+
+// --- Bench V2 (collapsed pipeline) ---
+
+// V2 §1 — one vision pass for the manifest + shared style + every per-icon
+// prompt. Logged under the "analyze" step (it is the V2 analyze call).
+export function megaAnalyze(imageBase64: string, fileName?: string, model?: string) {
+  return tracked(
+    { step: "analyze", kind: "text", model },
+    () =>
+      postJSON<MegaAnalyzeResponse>("/api/icons/mega-analyze", {
+        imageBase64,
+        fileName,
+        model,
+      }),
+    (r) => summarizeText(JSON.stringify(r.analysis, null, 2)),
+  );
+}
+
+// V2 §5 — generate every icon against the source image as the reference.
+export function generateIconsV2Batch(args: {
+  referenceImageBase64: string;
+  sharedStylePrompt: string;
+  icons: GenerateIconV2Item[];
+  model?: string;
+  quality?: ImageQuality;
+}) {
+  return tracked(
+    {
+      step: "generateIcons",
+      kind: "image",
+      model: args.model,
+      quality: args.quality,
+      count: args.icons.length,
+    },
+    () => postJSON<GenerateIconsV2Response>("/api/icons/generate-icons-v2", args),
     (r) => ({
       kind: "image",
       count: r.generatedIcons.filter((g) => g.status === "success").length,

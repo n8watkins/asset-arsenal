@@ -53,3 +53,28 @@ export const GenerateBatchRequestSchema = z.object({
   model: z.string().optional(),
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
+
+// --- Bench V2 (collapsed pipeline) ---
+
+// POST /api/icons/mega-analyze
+export const MegaAnalyzeRequestSchema = z.object({
+  imageBase64: z.string().min(1),
+  fileName: z.string().optional(),
+  model: z.string().optional(),
+});
+
+// POST /api/icons/generate-icons-v2
+export const GenerateIconV2ItemSchema = z.object({
+  iconId: z.string(),
+  iconName: z.string(),
+  concept: z.string(),
+  prompt: z.string(),
+});
+
+export const GenerateIconsV2RequestSchema = z.object({
+  referenceImageBase64: z.string().min(1),
+  sharedStylePrompt: z.string(),
+  icons: z.array(GenerateIconV2ItemSchema).min(1),
+  model: z.string().optional(),
+  quality: z.enum(["low", "medium", "high"]).optional(),
+});
