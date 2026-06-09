@@ -85,6 +85,27 @@ type BenchState = {
   collectionPrompt: string | null;
   collectionImageDataUrl: string | null;
   individualPrompts: IndividualIconPrompts | null;
+  // Batch icons from the most recent run (manual §6 or a chain cascade), shared
+  // so §6 reflects whatever last produced them.
+  generatedIcons: GeneratedIcon[] | null;
+};
+
+// The five paid steps in chain order. A "run to §N" cascade executes these in
+// sequence from the source image up to (and including) the chosen target.
+const CHAIN_ORDER: StepKey[] = [
+  "analyze",
+  "collectionPrompt",
+  "collectionImage",
+  "individualPrompts",
+  "generateIcons",
+];
+
+const CHAIN_LABEL: Record<StepKey, string> = {
+  analyze: "§1 manifest",
+  collectionPrompt: "§2 collection prompt",
+  collectionImage: "§3 collection image",
+  individualPrompts: "§4 icon prompts",
+  generateIcons: "§5 icons",
 };
 
 // ---------------------------------------------------------------------------
@@ -367,6 +388,97 @@ function StackPicker({
 }
 
 // ---------------------------------------------------------------------------
+// Chain control — pick how far down the pipeline to run, then cascade §1 → §N.
+// ---------------------------------------------------------------------------
+
+function ChainControl({
+  target,
+  onTarget,
+  onRun,
+  busy,
+  currentStep,
+  done,
+  error,
+  hasSource,
+}: {
+  target: StepKey;
+  onTarget: (s: StepKey) => void;
+  onRun: () => void;
+  busy: boolean;
+  currentStep: StepKey | null;
+  done: StepKey[];
+  error: string | null;
+  hasSource: boolean;
+}) {
+  const targetIdx = CHAIN_ORDER.indexOf(target);
+
+  return (
+    <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          Run chain
+        </span>
+        <span className="text-sm text-zinc-400">through</span>
+        <select
+          value={target}
+          onChange={(e) => onTarget(e.target.value as StepKey)}
+          disabled={busy}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+        >
+          {CHAIN_ORDER.map((k) => (
+            <option key={k} value={k}>
+              {CHAIN_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <RunButton
+          onClick={onRun}
+          busy={busy}
+          disabled={!hasSource}
+          label="▸ Run to here"
+        />
+        {!hasSource && (
+          <span className="text-zinc-500 text-sm">Add a source image in §1 first.</span>
+        )}
+      </div>
+
+      {/* Progress strip across the targeted steps. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {CHAIN_ORDER.map((k, i) => {
+          const included = i <= targetIdx;
+          const isDone = done.includes(k);
+          const isRunning = currentStep === k;
+          const cls = !included
+            ? "text-zinc-600 border-zinc-800 bg-zinc-900"
+            : isDone
+              ? "text-emerald-300 border-emerald-800/50 bg-emerald-950/40"
+              : isRunning
+                ? "text-cyan-300 border-cyan-700/50 bg-cyan-950/40 animate-pulse"
+                : "text-zinc-400 border-zinc-700 bg-zinc-800";
+          return (
+            <span
+              key={k}
+              className={`font-mono text-xs rounded-md border px-2.5 py-1 ${cls}`}
+            >
+              {isDone ? "✓ " : isRunning ? "● " : ""}
+              {CHAIN_LABEL[k]}
+            </span>
+          );
+        })}
+      </div>
+
+      <p className="text-zinc-600 text-xs">
+        Runs every step from the source image up to the selected one, in order,
+        feeding each output to the next — then persists images to the gallery.
+        Each step is also still runnable on its own below.
+      </p>
+
+      {error && <ErrorMsg msg={error} />}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // §1 — Analyze
 // ---------------------------------------------------------------------------
 
@@ -430,13 +542,13 @@ function Section1({
       />
       <RunButton onClick={run} busy={busy} disabled={!state.sourceDataUrl} />
       <OutputTabs
-        empty={!error && !result}
-        rawData={result ?? (error ? { error } : null)}
+        empty={!error && !result && !state.manifest}
+        rawData={result ?? state.manifest ?? (error ? { error } : null)}
         interpreted={
           error ? (
             <ErrorMsg msg={error} />
-          ) : result ? (
-            <InterpretedResult kind="manifest" data={result} />
+          ) : (result ?? state.manifest) ? (
+            <InterpretedResult kind="manifest" data={(result ?? state.manifest)!} />
           ) : null
         }
       />
@@ -535,13 +647,13 @@ function Section2({
       />
       <RunButton onClick={run} busy={busy} disabled={!!parseError} />
       <OutputTabs
-        empty={!error && !result}
-        rawData={result ?? (error ? { error } : null)}
+        empty={!error && !result && !state.collectionPrompt}
+        rawData={result ?? state.collectionPrompt ?? (error ? { error } : null)}
         interpreted={
           error ? (
             <ErrorMsg msg={error} />
-          ) : result ? (
-            <InterpretedResult kind="collectionPrompt" data={result} />
+          ) : (result ?? state.collectionPrompt) ? (
+            <InterpretedResult kind="collectionPrompt" data={(result ?? state.collectionPrompt)!} />
           ) : null
         }
       />
@@ -679,13 +791,22 @@ function Section3({
       )}
       <SavedNote saved={saved} noun="collection image" />
       <OutputTabs
-        empty={!error && !result}
-        rawData={result ?? (error ? { error } : null)}
+        empty={!error && !result && !state.collectionImageDataUrl}
+        rawData={
+          (result ?? state.collectionImageDataUrl)
+            ? { imageUrl: result ?? state.collectionImageDataUrl }
+            : error
+              ? { error }
+              : null
+        }
         interpreted={
           error ? (
             <ErrorMsg msg={error} />
-          ) : result ? (
-            <InterpretedResult kind="collectionImage" data={{ imageUrl: result }} />
+          ) : (result ?? state.collectionImageDataUrl) ? (
+            <InterpretedResult
+              kind="collectionImage"
+              data={{ imageUrl: (result ?? state.collectionImageDataUrl)! }}
+            />
           ) : null
         }
       />
@@ -800,13 +921,13 @@ function Section4({
         <p className="text-zinc-500 text-sm">Generate or provide a collection image first (§3).</p>
       )}
       <OutputTabs
-        empty={!error && !result}
-        rawData={result ?? (error ? { error } : null)}
+        empty={!error && !result && !state.individualPrompts}
+        rawData={result ?? state.individualPrompts ?? (error ? { error } : null)}
         interpreted={
           error ? (
             <ErrorMsg msg={error} />
-          ) : result ? (
-            <InterpretedResult kind="individualPrompts" data={result} />
+          ) : (result ?? state.individualPrompts) ? (
+            <InterpretedResult kind="individualPrompts" data={(result ?? state.individualPrompts)!} />
           ) : null
         }
       />
@@ -1042,13 +1163,13 @@ function Section6({
       )}
       <SavedNote saved={saved} />
       <OutputTabs
-        empty={!error && !result}
-        rawData={result ?? (error ? { error } : null)}
+        empty={!error && !result && !state.generatedIcons}
+        rawData={result ?? state.generatedIcons ?? (error ? { error } : null)}
         interpreted={
           error ? (
             <ErrorMsg msg={error} />
-          ) : result ? (
-            <InterpretedResult kind="icons" data={result} />
+          ) : (result ?? state.generatedIcons) ? (
+            <InterpretedResult kind="icons" data={(result ?? state.generatedIcons)!} />
           ) : null
         }
       />
@@ -1069,6 +1190,7 @@ export default function BenchPage() {
     collectionPrompt: null,
     collectionImageDataUrl: null,
     individualPrompts: null,
+    generatedIcons: null,
   });
 
   const patch = useCallback(
@@ -1099,6 +1221,115 @@ export default function BenchPage() {
     (dataUrl: string) => persistBenchCollectionImage(dataUrl),
     [],
   );
+
+  // ---- Chain orchestrator: run §1 → chosen depth automatically ----
+  const [chainTarget, setChainTarget] = useState<StepKey>("generateIcons");
+  const [chainBusy, setChainBusy] = useState(false);
+  const [chainStep, setChainStep] = useState<StepKey | null>(null);
+  const [chainDone, setChainDone] = useState<StepKey[]>([]);
+  const [chainError, setChainError] = useState<string | null>(null);
+
+  const runChain = useCallback(async () => {
+    const src = state.sourceDataUrl;
+    if (!src) {
+      setChainError("Provide a source image in §1 before running the chain.");
+      return;
+    }
+    const targetIdx = CHAIN_ORDER.indexOf(chainTarget);
+    const { models, quality } = state.stack;
+
+    setChainBusy(true);
+    setChainError(null);
+    setChainDone([]);
+    setChainStep(null);
+
+    // Thread artifacts through locals — setState is async, so we can't read
+    // `state` back mid-cascade.
+    let manifest = state.manifest;
+    let collectionPrompt = state.collectionPrompt;
+    let collectionImage = state.collectionImageDataUrl;
+    let individualPrompts = state.individualPrompts;
+    const done: StepKey[] = [];
+    let running: StepKey = chainTarget; // tracked locally for accurate error labels
+
+    try {
+      if (targetIdx >= 0) {
+        running = "analyze";
+        setChainStep("analyze");
+        manifest = (await analyzeImage(src, state.sourceFileName ?? undefined, models.analyze)).manifest;
+        patch({ manifest });
+        done.push("analyze");
+        setChainDone([...done]);
+      }
+      if (targetIdx >= 1) {
+        running = "collectionPrompt";
+        setChainStep("collectionPrompt");
+        collectionPrompt = (await composeCollectionPrompt(manifest!, models.collectionPrompt)).collectionPrompt;
+        patch({ collectionPrompt });
+        done.push("collectionPrompt");
+        setChainDone([...done]);
+      }
+      if (targetIdx >= 2) {
+        running = "collectionImage";
+        setChainStep("collectionImage");
+        collectionImage = (
+          await generateCollectionImage({
+            sourceImageBase64: src,
+            manifest: manifest!,
+            collectionPrompt: collectionPrompt!,
+            model: models.collectionImage,
+            quality: quality.collectionImage,
+          })
+        ).collectionImage.imageUrl;
+        patch({ collectionImageDataUrl: collectionImage });
+        await persistBenchCollectionImage(collectionImage);
+        done.push("collectionImage");
+        setChainDone([...done]);
+      }
+      if (targetIdx >= 3) {
+        running = "individualPrompts";
+        setChainStep("individualPrompts");
+        individualPrompts = (
+          await composeIndividualPrompts({
+            collectionImageBase64: collectionImage!,
+            manifest: manifest!,
+            model: models.individualPrompts,
+          })
+        ).individualPrompts;
+        patch({ individualPrompts });
+        done.push("individualPrompts");
+        setChainDone([...done]);
+      }
+      if (targetIdx >= 4) {
+        running = "generateIcons";
+        setChainStep("generateIcons");
+        const { generatedIcons } = await generateIconsBatch({
+          collectionImageBase64: collectionImage!,
+          individualPrompts: individualPrompts!,
+          model: models.generateIcons,
+          quality: quality.generateIcons,
+        });
+        patch({ generatedIcons });
+        await persistBenchIcons(generatedIcons, {
+          runId: runIdRef.current!,
+          createdAt: createdAtRef.current,
+          sourceId: runIdRef.current!,
+          manifest,
+          collectionPrompt,
+          individualPrompts,
+        });
+        done.push("generateIcons");
+        setChainDone([...done]);
+      }
+    } catch (err) {
+      setChainError(
+        `${CHAIN_LABEL[running]} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setChainStep(null);
+      setChainBusy(false);
+    }
+  }, [state, chainTarget, patch]);
 
   // Saved stacks come from localStorage; load once on mount (client-only).
   const [savedStacks, setSavedStacks] = useState<Stack[]>([]);
@@ -1144,6 +1375,17 @@ export default function BenchPage() {
             stack={state.stack}
             options={stackOptions}
             onSelect={selectStack}
+          />
+
+          <ChainControl
+            target={chainTarget}
+            onTarget={setChainTarget}
+            onRun={runChain}
+            busy={chainBusy}
+            currentStep={chainStep}
+            done={chainDone}
+            error={chainError}
+            hasSource={!!state.sourceDataUrl}
           />
 
           <Section1 state={state} patch={patch} />
