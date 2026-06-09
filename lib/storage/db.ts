@@ -10,6 +10,9 @@ import type {
   IndividualIconPrompts,
   GeneratedIcon,
 } from "@/types/icon-pipeline";
+// Type-only import (erased at runtime) — avoids a real cycle with usage-log,
+// which imports getDB() from here.
+import type { UsageEntry } from "@/lib/icon/usage-log";
 
 // ---- Stored record types ----
 
@@ -69,6 +72,11 @@ interface AssetArsenalDB extends DBSchema {
     value: StoredIcon;
     indexes: { "by-run": string; "by-createdAt": string };
   };
+  usage: {
+    key: string;
+    value: UsageEntry;
+    indexes: { "by-at": string };
+  };
 }
 
 // ---- Singleton ----
@@ -83,7 +91,9 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
   }
 
   if (!_dbPromise) {
-    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 1, {
+    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 2, {
+      // Guarded creates → idempotent across versions; bumping the version runs
+      // this again and only adds what's missing (existing data is untouched).
       upgrade(db) {
         // sources store
         if (!db.objectStoreNames.contains("sources")) {
@@ -101,6 +111,12 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
           const iconsStore = db.createObjectStore("icons", { keyPath: "id" });
           iconsStore.createIndex("by-run", "runId");
           iconsStore.createIndex("by-createdAt", "createdAt");
+        }
+
+        // usage store (v2) — the API call + result log
+        if (!db.objectStoreNames.contains("usage")) {
+          const usageStore = db.createObjectStore("usage", { keyPath: "id" });
+          usageStore.createIndex("by-at", "at");
         }
       },
     });

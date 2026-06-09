@@ -7,7 +7,6 @@ import { STEPS, type StepKey } from "@/lib/icon/model-reference";
 import {
   loadUsage,
   clearUsage,
-  USAGE_LOG_CAP,
   type UsageEntry,
   type UsageResult,
 } from "@/lib/icon/usage-log";
@@ -54,18 +53,18 @@ export default function UsagePage() {
   const [entries, setEntries] = useState<UsageEntry[]>([]);
 
   function refresh() {
-    setEntries(loadUsage());
+    loadUsage().then(setEntries);
   }
 
   useEffect(() => {
     refresh();
   }, []);
 
-  function handleClear() {
+  async function handleClear() {
     if (!window.confirm("Clear the entire API usage log? This cannot be undone.")) {
       return;
     }
-    clearUsage();
+    await clearUsage();
     refresh();
   }
 
@@ -88,9 +87,9 @@ export default function UsagePage() {
             <p className="max-w-2xl text-base text-zinc-400">
               Every call to OpenAI made from this browser — its estimated and
               realized cost <em>and the result it produced</em> (prompts/manifests
-              inline; generated images saved to the gallery). Stored locally —
-              nothing leaves your device. Keeps the most recent {USAGE_LOG_CAP}{" "}
-              calls (this becomes unlimited once usage moves to a database).
+              in full; generated images saved to the gallery). Stored in your
+              browser&apos;s local database (IndexedDB, same as the gallery) —
+              full history, no cap, nothing leaves your device.
             </p>
             <Link
               href="/models"
@@ -293,7 +292,6 @@ function ResultBlock({ result, ok }: { result?: UsageResult; ok: boolean }) {
       </summary>
       <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300 whitespace-pre-wrap break-words">
         {result.text}
-        {result.truncated ? "\n…(truncated — full result will be kept once usage moves to a database)" : ""}
       </pre>
     </details>
   );

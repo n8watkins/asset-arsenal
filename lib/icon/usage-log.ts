@@ -1,23 +1,23 @@
-// localStorage-backed append log of every API call made from this browser.
-// Browser-only; best-effort (never throws). Used by the /usage tracking page.
+// IndexedDB-backed log of every API call made from this browser, including the
+// result each call produced. Browser-only; best-effort (never throws). Backs
+// the /usage page. Lives in the same local database as the gallery (the "usage"
+// store in lib/storage/db.ts), so there's no size cap and results are kept in
+// full — localStorage (5 MB, strings only) was only ever a stopgap for tiny
+// metadata.
 
+import { getDB } from "@/lib/storage/db";
 import type { StepKey, ImageQuality } from "@/lib/icon/model-reference";
 
 // The actual output a call produced, stored alongside the request so /usage is a
-// results history, not just a call log. Text is inlined (capped for localStorage
-// safety); images are referenced by count — the bytes live in the gallery's
-// IndexedDB, not here.
+// results history, not just a call log. Text is stored in full; images are
+// referenced by count — the bytes live in the gallery's stores, not here.
 export type UsageResult =
   | { kind: "text"; text: string; truncated?: boolean }
   | { kind: "image"; count: number };
 
-// Cap inlined result text so a long manifest / prompt set can't blow the
-// localStorage quota across the capped log. Full fidelity returns with the DB.
-export const RESULT_TEXT_CAP = 8000;
-
+/** Wrap a text result. No truncation — IndexedDB has room for the full text. */
 export function summarizeText(text: string): UsageResult {
-  if (text.length <= RESULT_TEXT_CAP) return { kind: "text", text };
-  return { kind: "text", text: text.slice(0, RESULT_TEXT_CAP), truncated: true };
+  return { kind: "text", text };
 }
 
 export type UsageEntry = {
@@ -37,46 +37,40 @@ export type UsageEntry = {
   result?: UsageResult;
 };
 
-export const USAGE_LOG_KEY = "asset-arsenal:usage-log";
-
-// Cap the local log so it can't grow unbounded and blow the localStorage quota.
-// Newest-first, so we keep the most recent calls. Lifts entirely once usage
-// moves to a real database.
-export const USAGE_LOG_CAP = 500;
-
-/** Every call ever logged, newest-first. */
-export function loadUsage(): UsageEntry[] {
-  if (typeof localStorage === "undefined") return [];
+/** Every call ever logged, newest-first. Best-effort: returns [] on any error. */
+export async function loadUsage(): Promise<UsageEntry[]> {
   try {
-    const raw = localStorage.getItem(USAGE_LOG_KEY);
-    return raw ? (JSON.parse(raw) as UsageEntry[]) : [];
+    const db = await getDB();
+    const all = await db.getAll("usage");
+    all.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+    return all;
   } catch {
     return [];
   }
 }
 
-/** Prepend one entry (newest-first) and persist. Best-effort. */
-export function logUsage(
+/** Append one entry. Best-effort — a storage error never breaks the caller. */
+export async function logUsage(
   entry: Omit<UsageEntry, "id" | "at"> & { at?: string },
-): void {
-  if (typeof localStorage === "undefined") return;
+): Promise<void> {
   try {
+    const db = await getDB();
     const full: UsageEntry = {
       ...entry,
       id: crypto.randomUUID(),
       at: entry.at ?? new Date().toISOString(),
     };
-    const next = [full, ...loadUsage()].slice(0, USAGE_LOG_CAP);
-    localStorage.setItem(USAGE_LOG_KEY, JSON.stringify(next));
+    await db.put("usage", full);
   } catch {
-    /* quota / private mode — ignore */
+    /* unavailable / quota — ignore */
   }
 }
 
-export function clearUsage(): void {
-  if (typeof localStorage === "undefined") return;
+/** Wipe the entire usage log. */
+export async function clearUsage(): Promise<void> {
   try {
-    localStorage.removeItem(USAGE_LOG_KEY);
+    const db = await getDB();
+    await db.clear("usage");
   } catch {
     /* ignore */
   }
