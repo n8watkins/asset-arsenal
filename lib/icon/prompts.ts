@@ -30,6 +30,7 @@ Rules:
 - Group repeated icons into one icon type when appropriate.
 - Ignore tiny unreadable text.
 - Do not list every tiny decoration as an icon.
+- Return valid JSON only.
 
 Also extract the shared icon family style:
 - color palette
@@ -41,7 +42,31 @@ Also extract the shared icon family style:
 
 Give each icon a stable id like "icon_001", "icon_002", etc.
 Set iconCount to the number of icons you return.
-If a style field does not apply (e.g. there is no glow), set glowStyle to null.`;
+If a style field does not apply (e.g. there is no glow), set glowStyle to null.
+
+Output JSON:
+{
+  "iconCount": number,
+  "sharedIconFamilyStyle": {
+    "colorPalette": [],
+    "lineStyle": "",
+    "shapeLanguage": "",
+    "glowStyle": "",
+    "backgroundRule": "",
+    "negativeRules": []
+  },
+  "icons": [
+    {
+      "id": "icon_001",
+      "name": "short icon name",
+      "concept": "what the icon represents",
+      "whereVisible": "where it appears in the source image",
+      "visualDescription": "what it looks like",
+      "confidence": "high | medium | low"
+    }
+  ],
+  "excludedAsNonIcons": []
+}`;
 
 // ---------------------------------------------------------------------------
 // Step 2 — Icon manifest -> icon collection image prompt
@@ -110,39 +135,43 @@ export function buildIndividualPromptComposer(manifestJson: string): string {
 
 You will receive:
 1. the original icon manifest JSON
-2. a collection image showing the approved icon family style
+2. an icon collection image showing the approved icon family style
 
 Your task:
 Create one image-generation prompt for each icon in the manifest.
 
-Each prompt should generate a single standalone icon that matches the collection image style.
-
-Global style to preserve:
-- Derive the shared visual style entirely from the approved collection image and the manifest's style fields (color palette, line style, shape language, glow style, background rule, and any negative rules).
-- Do not impose any predetermined aesthetic, theme, color scheme, or mood — match whatever style the collection image and manifest actually define, whether that is light or dark, flat or detailed, mono or multicolor.
-- Keep every icon mutually consistent in stroke weight, padding, scale, silhouette treatment, and overall finish.
+Each prompt should generate a single standalone icon that matches the approved icon family style.
 
 Important:
-- Use the collection image as the visual style reference.
+- Match the same icon family style as defined by the manifest's shared style fields (colorPalette, lineStyle, shapeLanguage, glowStyle, backgroundRule, negativeRules) AND as you can interpret from the attached icon collection image. Derive the style only from those two sources — never from any assumed or predetermined aesthetic, theme, color scheme, or mood.
+- Use the attached icon collection image as the visual style reference.
 - Use the manifest as the source of truth for icon names, concepts, and meanings.
-- Preserve the shared icon family style exactly as it appears in the collection image.
+- Keep every icon mutually consistent in stroke weight, padding, scale, silhouette, and finish.
 
 Each individual prompt must:
 - generate one icon only
 - use 1:1 square format
 - be centered
 - be reusable as a dashboard icon asset
-- match the collection image style
+- match the shared icon family style
 - include the icon's concept and visual description
 - avoid labels, numbers, fake text, captions, watermarks, dashboards, cards, charts, buttons, full UI screens, and extra decoration
 
-For each icon set:
-- iconId and iconName from the manifest
-- concept from the manifest
-- collectionImageReference: describe where this icon appears in the collection image if possible (e.g. "row 2, column 3")
-- prompt: the final image-generation prompt for this single icon
+Also write a sharedStylePrompt: a single shared style paragraph, derived from the manifest's shared style fields and the icon collection image, to reuse in every generation.
 
-Also write a sharedStylePrompt: a shared style paragraph to reuse in every generation.
+Output JSON:
+{
+  "sharedStylePrompt": "shared style paragraph to reuse in every generation",
+  "iconPrompts": [
+    {
+      "iconId": "icon_001",
+      "iconName": "icon name",
+      "concept": "icon concept",
+      "collectionImageReference": "describe where this icon appears in the icon collection image if possible",
+      "prompt": "final image-generation prompt for this single icon"
+    }
+  ]
+}
 
 Input icon manifest:
 ${manifestJson}`;
@@ -160,7 +189,7 @@ export function buildIconGenerationWrapper(args: {
 }): string {
   return `Create exactly one isolated reusable icon asset.
 
-Use the attached icon collection image as the visual style reference. Match the same icon family style, stroke weight, proportions, padding, and overall presentation exactly as shown in the collection image.
+Use the attached icon collection image as the visual style reference. Match the same icon family style as described in the shared style prompt below AND as you can interpret from the collection image — stroke weight, proportions, padding, color treatment, and overall finish. Derive the style only from those two sources; do not impose any predetermined aesthetic, theme, or background.
 
 Shared icon family style:
 ${args.sharedStylePrompt}
