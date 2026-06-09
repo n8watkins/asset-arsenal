@@ -15,6 +15,8 @@ import type {
 import type { UsageEntry } from "@/lib/icon/usage-log";
 // Same pattern for the prompt-arena ledger (arena-store imports getDB from here).
 import type { ArenaExperiment } from "@/lib/gemini/arena-store";
+// And for the Gemini analysis chat sidebar.
+import type { GeminiChat } from "@/lib/gemini/chat-store";
 
 // ---- Stored record types ----
 
@@ -84,6 +86,11 @@ interface AssetArsenalDB extends DBSchema {
     value: ArenaExperiment;
     indexes: { "by-at": string; "by-seq": number };
   };
+  chats: {
+    key: string;
+    value: GeminiChat;
+    indexes: { "by-updatedAt": string };
+  };
 }
 
 // ---- Singleton ----
@@ -98,7 +105,7 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
   }
 
   if (!_dbPromise) {
-    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 3, {
+    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 4, {
       // Guarded creates → idempotent across versions; bumping the version runs
       // this again and only adds what's missing (existing data is untouched).
       upgrade(db) {
@@ -132,6 +139,12 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
           const expStore = db.createObjectStore("experiments", { keyPath: "id" });
           expStore.createIndex("by-at", "createdAt");
           expStore.createIndex("by-seq", "seq");
+        }
+
+        // chats store (v4) — the Gemini analysis chat sidebar.
+        if (!db.objectStoreNames.contains("chats")) {
+          const chatStore = db.createObjectStore("chats", { keyPath: "id" });
+          chatStore.createIndex("by-updatedAt", "updatedAt");
         }
       },
     });
