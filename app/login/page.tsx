@@ -41,13 +41,27 @@ export default function LoginPage() {
   const authConfigured = features.auth;
 
   return (
-    <main className="flex min-h-dvh flex-1 items-center justify-center px-5 py-16">
-      <Card className="w-full max-w-md text-center">
+    <main className="relative flex min-h-dvh flex-1 items-center justify-center overflow-hidden px-5 py-16">
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/4 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/15 blur-3xl"
+        aria-hidden="true"
+      />
+      <Card className="relative w-full max-w-md p-8 text-center">
         <Link
           href="/"
-          className="mb-2 inline-block text-2xl font-semibold tracking-tight text-foreground"
+          className="mb-3 inline-flex items-center gap-2.5 text-foreground transition-opacity hover:opacity-80"
         >
-          {SITE.name}
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+              <rect x="9.5" y="1.5" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+              <rect x="1.5" y="9.5" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+              <rect x="9.5" y="9.5" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+            </svg>
+          </span>
+          <span className="text-2xl font-semibold tracking-tight">
+            {SITE.name}
+          </span>
         </Link>
         <p className="mb-8 text-sm text-muted">
           Turn design images into reusable icon packs.

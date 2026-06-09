@@ -32,32 +32,38 @@ export function PricingCard({ pack }: { pack: Pack }) {
   return (
     <div
       className={cn(
-        "relative flex flex-col rounded-2xl border p-6",
+        "group relative flex flex-col rounded-2xl p-6 transition-all duration-200",
         featured
-          ? "border-primary bg-surface shadow-lg shadow-primary/10 ring-1 ring-primary/30"
-          : "border-border bg-surface",
+          ? "featured-ring inner-glow bg-gradient-to-b from-surface-2 to-surface"
+          : "border border-border bg-surface hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5",
       )}
     >
       {featured && (
-        <div className="absolute -top-3 left-6">
-          <Badge className="border-primary/40 bg-primary/15 text-primary">
+        <div className="absolute -top-3 left-1/2 z-10 -translate-x-1/2">
+          <Badge className="border-primary/50 bg-primary/20 text-foreground shadow-[0_4px_16px_-6px_var(--primary)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
             Most popular
           </Badge>
         </div>
       )}
 
-      <div className="mb-4">
+      <div className="relative mb-4">
         <h3 className="text-lg font-semibold text-foreground">{pack.name}</h3>
         <p className="mt-1 text-sm text-muted">{pack.tagline}</p>
       </div>
 
-      <div className="mb-1 flex items-baseline gap-1.5">
-        <span className="text-4xl font-bold tracking-tight text-foreground">
+      <div className="relative mb-1 flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            "text-4xl font-bold tracking-tight",
+            featured ? "text-gradient" : "text-foreground",
+          )}
+        >
           {priceLabel(pack.priceCents)}
         </span>
         {!isFree && <span className="text-sm text-muted">one-time</span>}
       </div>
-      <p className="mb-5 text-sm text-muted">
+      <p className="relative mb-5 text-sm text-muted">
         {pack.credits} icons{perIcon ? ` · ${perIcon}` : ""}
       </p>
 
@@ -65,12 +71,12 @@ export function PricingCard({ pack }: { pack: Pack }) {
         href={href}
         variant={featured ? "primary" : "secondary"}
         size="md"
-        className="w-full"
+        className="relative w-full"
       >
         {cta}
       </ButtonLink>
 
-      <ul className="mt-6 space-y-2.5">
+      <ul className="relative mt-6 space-y-2.5">
         {pack.features.map((f) => (
           <li key={f} className="flex gap-2 text-sm text-foreground/90">
             <CheckIcon />

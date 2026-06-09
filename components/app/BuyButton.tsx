@@ -51,7 +51,17 @@ export function BuyButton({
   return (
     <div className="space-y-2">
       <Button className="w-full" onClick={buy} disabled={busy}>
-        {busy ? "Redirecting…" : label}
+        {busy ? (
+          <>
+            <span
+              className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground"
+              aria-hidden="true"
+            />
+            Redirecting…
+          </>
+        ) : (
+          label
+        )}
       </Button>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>

@@ -14,18 +14,41 @@ import { PricingGrid } from "@/components/marketing/PricingGrid";
 import { FAQ } from "@/components/marketing/FAQ";
 import { JsonLd } from "@/components/seo/JsonLd";
 
+function CheckMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5 text-accent"
+      aria-hidden
+    >
+      <path d="m5 12 5 5L20 7" />
+    </svg>
+  );
+}
+
 export default function LandingPage() {
   return (
     <>
       <JsonLd />
 
       {/* Hero */}
-      <div className="glow relative overflow-hidden">
+      <div className="glow grid-texture relative overflow-hidden">
         <Container className="pt-20 pb-16 sm:pt-28 sm:pb-20">
           <div className="mx-auto max-w-3xl text-center">
-            <Eyebrow>AI-assisted icon packs</Eyebrow>
-            <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
-              Turn AI design images into reusable icon packs.
+            <div className="flex justify-center">
+              <Badge className="mb-6 border-primary/30 bg-primary/10 text-foreground/90">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
+                AI-assisted icon packs
+              </Badge>
+            </div>
+            <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-6xl">
+              <span className="text-foreground">Turn AI design images into </span>
+              <span className="text-gradient">reusable icon packs.</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted">
               {SITE.description}
@@ -38,9 +61,20 @@ export default function LandingPage() {
                 See examples
               </ButtonLink>
             </div>
-            <p className="mt-4 text-sm text-muted">
-              {SIGNUP_FREE_CREDITS} free icons to start · No card required
-            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-muted">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckMark />
+                {SIGNUP_FREE_CREDITS} free icons to start
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <CheckMark />
+                No card required
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <CheckMark />
+                Style matched to your image
+              </span>
+            </div>
           </div>
 
           <div className="mx-auto mt-16 max-w-5xl">
@@ -50,7 +84,7 @@ export default function LandingPage() {
       </div>
 
       {/* Before / After explainer */}
-      <Section id="how" className="border-t border-border">
+      <Section id="how" className="section-divider">
         <Container>
           <div className="mx-auto max-w-2xl text-center">
             <Eyebrow>The wedge</Eyebrow>
@@ -85,7 +119,7 @@ export default function LandingPage() {
             ].map((f) => (
               <div
                 key={f.title}
-                className="rounded-2xl border border-border bg-surface p-5"
+                className="group rounded-2xl border border-border bg-surface p-5 transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5"
               >
                 <h3 className="text-base font-semibold text-foreground">
                   {f.title}
@@ -100,7 +134,7 @@ export default function LandingPage() {
       </Section>
 
       {/* How it works */}
-      <Section className="border-t border-border bg-surface/30">
+      <Section className="section-divider bg-surface/30">
         <Container>
           <div className="mx-auto max-w-2xl text-center">
             <Eyebrow>How it works</Eyebrow>
@@ -115,7 +149,7 @@ export default function LandingPage() {
       </Section>
 
       {/* Pricing teaser */}
-      <Section id="pricing" className="border-t border-border">
+      <Section id="pricing" className="section-divider">
         <Container>
           <div className="mx-auto max-w-2xl text-center">
             <Eyebrow>Pricing</Eyebrow>
@@ -144,7 +178,7 @@ export default function LandingPage() {
       </Section>
 
       {/* FAQ */}
-      <Section className="border-t border-border bg-surface/30">
+      <Section className="section-divider bg-surface/30">
         <Container>
           <div className="mx-auto mb-12 max-w-2xl text-center">
             <Eyebrow>FAQ</Eyebrow>
@@ -157,10 +191,11 @@ export default function LandingPage() {
       </Section>
 
       {/* Final CTA */}
-      <Section className="border-t border-border">
+      <Section className="section-divider">
         <Container>
-          <div className="glow relative overflow-hidden rounded-3xl border border-border bg-surface px-6 py-16 text-center sm:px-12">
-            <Badge className="mb-5 border-primary/40 bg-primary/15 text-primary">
+          <div className="glow inner-glow grid-texture relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-b from-surface-2 to-surface px-6 py-16 text-center sm:px-12">
+            <Badge className="mb-5 border-primary/40 bg-primary/15 text-foreground/90">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
               {SIGNUP_FREE_CREDITS} free icons to start
             </Badge>
             <h2 className="mx-auto max-w-2xl text-balance text-3xl font-bold tracking-tight text-foreground sm:text-4xl">

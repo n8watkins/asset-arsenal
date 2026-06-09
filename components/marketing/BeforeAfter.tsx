@@ -1,180 +1,199 @@
+/**
+ * The flagship conversion visual: a BEFORE → AFTER unit.
+ *
+ *   LEFT  = the family's product mockup (the "design image you bring").
+ *   MID   = an arrow / "extracted" divider with the Asset Arsenal mark.
+ *   RIGHT = a 3×4 grid of the matching standalone icons on tasteful tiles,
+ *           glowing where the family calls for it.
+ *
+ * It must read instantly that the right-hand icons MATCH the left design's
+ * style. Renders with NO required props (defaults to the brand "saas" family)
+ * so the home page can use <BeforeAfter /> directly.
+ */
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/cn";
 import {
-  ICON_FAMILY,
-  type Glyph,
-  HomeIcon,
-  ChartIcon,
-  BellIcon,
-  UserIcon,
-  SearchIcon,
-  SettingsIcon,
-} from "./icons";
+  DEFAULT_FAMILY,
+  GLYPH_ORDER,
+  getFamily,
+  type FamilyId,
+} from "./icon-families";
+import { FamilyIcon, withAlpha } from "./icons";
+import { Mockup } from "./mockups";
 
-/**
- * The flagship conversion visual. LEFT = a CSS-drawn "design mockup"
- * (header bar, sidebar, cards/charts) with small inline icons baked in.
- * RIGHT = the same icon family extracted as a clean, standalone grid.
- * Everything is drawn with divs + inline SVG — no external image assets.
- */
+export type { FamilyId };
 
-export function MockupPanel({
-  accent = "text-primary",
-}: {
-  /** Tailwind text-color class for the accent icons/bars. */
-  accent?: string;
-}) {
+/* ------------------------------------------------------------------ */
+/* Right column — the extracted icon pack on tiles                    */
+/* ------------------------------------------------------------------ */
+
+function IconPackGrid({ family }: { family: FamilyId }) {
+  const { palette: p, style: s } = getFamily(family);
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background">
-      {/* window chrome */}
-      <div className="flex items-center gap-1.5 border-b border-border bg-surface-2 px-3 py-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-border" />
-        <span className="h-2.5 w-2.5 rounded-full bg-border" />
-        <span className="h-2.5 w-2.5 rounded-full bg-border" />
-        <div className="ml-2 h-3 w-28 rounded bg-surface" />
-      </div>
-
-      <div className="flex flex-1">
-        {/* sidebar */}
-        <div className="flex w-12 flex-col items-center gap-4 border-r border-border bg-surface px-2 py-4 sm:w-14">
-          <HomeIcon className={cn("h-5 w-5", accent)} />
-          <ChartIcon className="h-5 w-5 text-muted" />
-          <UserIcon className="h-5 w-5 text-muted" />
-          <SettingsIcon className="h-5 w-5 text-muted" />
-        </div>
-
-        {/* content */}
-        <div className="flex-1 space-y-3 p-3 sm:p-4">
-          {/* top bar */}
-          <div className="flex items-center justify-between">
-            <div className="h-3 w-20 rounded bg-surface-2" />
-            <div className="flex items-center gap-2.5">
-              <SearchIcon className="h-4 w-4 text-muted" />
-              <BellIcon className="h-4 w-4 text-muted" />
-              <span className="h-5 w-5 rounded-full bg-surface-2" />
-            </div>
+    <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
+      {GLYPH_ORDER.map((name) => {
+        const tileStyle: CSSProperties = {
+          background: p.surface,
+          border: `1px solid ${p.stroke}`,
+          ...(s.glow
+            ? { boxShadow: `inset 0 0 18px ${withAlpha(p.accent, 0.08)}` }
+            : {}),
+        };
+        return (
+          <div
+            key={name}
+            className={cn(
+              "flex aspect-square items-center justify-center p-2.5 sm:p-3",
+              s.tileRadius,
+            )}
+            style={tileStyle}
+          >
+            <FamilyIcon
+              family={family}
+              name={name}
+              className="h-6 w-6 sm:h-7 sm:w-7"
+            />
           </div>
-
-          {/* stat cards */}
-          <div className="grid grid-cols-3 gap-2">
-            {[HomeIcon, ChartIcon, BellIcon].map((Glyph, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border bg-surface p-2"
-              >
-                <Glyph className={cn("mb-1.5 h-4 w-4", accent)} />
-                <div className="h-2 w-8 rounded bg-surface-2" />
-                <div className="mt-1 h-3 w-10 rounded bg-border" />
-              </div>
-            ))}
-          </div>
-
-          {/* chart card */}
-          <div className="rounded-lg border border-border bg-surface p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="h-2.5 w-16 rounded bg-surface-2" />
-              <ChartIcon className={cn("h-4 w-4", accent)} />
-            </div>
-            <div className="flex h-12 items-end gap-1.5">
-              {[40, 65, 35, 80, 55, 70, 45, 90].map((h, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex-1 rounded-t",
-                    i % 2 === 0 ? "bg-primary/70" : "bg-surface-2",
-                  )}
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+        );
+      })}
     </div>
   );
 }
 
-export function IconPackGrid({
-  glyphs = ICON_FAMILY.map((f) => f.Icon),
-  accent = "text-primary",
-}: {
-  glyphs?: Glyph[];
-  accent?: string;
-}) {
+/* ------------------------------------------------------------------ */
+/* Center divider                                                     */
+/* ------------------------------------------------------------------ */
+
+function ExtractDivider({ family }: { family: FamilyId }) {
+  const { palette: p, style: s } = getFamily(family);
   return (
-    <div className="grid h-full grid-cols-4 gap-2.5 sm:gap-3">
-      {glyphs.map((Glyph, i) => (
-        <div
-          key={i}
-          className="group flex aspect-square items-center justify-center rounded-xl border border-border bg-background transition-colors hover:border-primary/50"
+    <div className="flex shrink-0 items-center justify-center gap-2 md:flex-col">
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded-full"
+        style={{
+          background: `linear-gradient(135deg, ${p.accent}, ${p.accent2})`,
+          color: "#fff",
+          boxShadow: s.glow
+            ? `0 0 22px ${withAlpha(p.accent, 0.6)}`
+            : `0 6px 18px ${withAlpha(p.accent, 0.28)}`,
+        }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.25}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4 rotate-90 md:rotate-0"
         >
-          <Glyph
-            className={cn(
-              "h-6 w-6 transition-colors sm:h-7 sm:w-7",
-              i % 5 === 0 ? accent : "text-foreground",
-            )}
-          />
-        </div>
+          <path d="M5 12h13" />
+          <path d="m12 6 6 6-6 6" />
+        </svg>
+      </div>
+      <span
+        className="text-[10px] font-semibold uppercase tracking-widest"
+        style={{ color: p.accent }}
+      >
+        Extracted
+      </span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Caption                                                            */
+/* ------------------------------------------------------------------ */
+
+function PackCaption({ family }: { family: FamilyId }) {
+  const { palette: p } = getFamily(family);
+  const items = ["12 icons", "style-matched", "PNG + SVG"];
+  return (
+    <div
+      className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"
+      style={{ color: p.muted }}
+    >
+      {items.map((item, i) => (
+        <span key={item} className="flex items-center gap-2">
+          {i > 0 && (
+            <span
+              className="inline-block h-1 w-1 rounded-full"
+              style={{ background: p.stroke }}
+            />
+          )}
+          {item}
+        </span>
       ))}
     </div>
   );
 }
 
-export function ArrowDivider() {
-  return (
-    <div className="flex shrink-0 items-center justify-center md:flex-col">
-      <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-accent shadow-sm">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-4 w-4 rotate-90 md:rotate-0"
-        >
-          <path d="M5 12h14" />
-          <path d="m13 6 6 6-6 6" />
-        </svg>
-      </div>
-    </div>
-  );
+/* ------------------------------------------------------------------ */
+/* Composed unit                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface BeforeAfterProps {
+  /** Which design system to show. Defaults to the brand "saas" family. */
+  family?: FamilyId;
+  className?: string;
 }
 
 export function BeforeAfter({
+  family = DEFAULT_FAMILY,
   className,
-  glyphs,
-  accent = "text-primary",
-}: {
-  className?: string;
-  glyphs?: Glyph[];
-  accent?: string;
-}) {
+}: BeforeAfterProps = {}) {
+  const fam = getFamily(family);
+  const { palette: p } = fam;
+
+  // Tasteful tinted container so each unit reads as its own brand world.
+  const panelStyle: CSSProperties = {
+    background: `linear-gradient(160deg, ${withAlpha(p.accent, 0.05)}, transparent 60%)`,
+  };
+
   return (
     <div
       className={cn(
-        "grid items-stretch gap-4 md:grid-cols-[1fr_auto_1fr] md:gap-3",
+        "grid items-stretch gap-5 md:grid-cols-[1fr_auto_1fr] md:gap-4",
         className,
       )}
+      style={panelStyle}
     >
-      <figure className="flex flex-col">
-        <figcaption className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">
+      {/* BEFORE */}
+      <figure className="flex min-w-0 flex-col">
+        <figcaption
+          className="mb-2 text-[11px] font-semibold uppercase tracking-wider"
+          style={{ color: p.muted }}
+        >
           Your design image
         </figcaption>
-        <div className="flex-1 rounded-2xl border border-border bg-surface p-3">
-          <MockupPanel accent={accent} />
+        <div
+          className="flex-1 rounded-2xl p-2.5"
+          style={{ background: p.surface, border: `1px solid ${p.stroke}` }}
+        >
+          <Mockup family={family} />
         </div>
       </figure>
 
-      <ArrowDivider />
+      <ExtractDivider family={family} />
 
-      <figure className="flex flex-col">
-        <figcaption className="mb-2 text-xs font-medium uppercase tracking-wider text-accent">
-          Your icon pack
+      {/* AFTER */}
+      <figure className="flex min-w-0 flex-col">
+        <figcaption
+          className="mb-2 text-[11px] font-semibold uppercase tracking-wider"
+          style={{ color: p.accent }}
+        >
+          {fam.label} icon pack
         </figcaption>
-        <div className="flex-1 rounded-2xl border border-border bg-surface p-4">
-          <IconPackGrid glyphs={glyphs} accent={accent} />
+        <div
+          className="flex flex-1 flex-col rounded-2xl p-3 sm:p-4"
+          style={{ background: p.bg, border: `1px solid ${p.stroke}` }}
+        >
+          <IconPackGrid family={family} />
+          <PackCaption family={family} />
         </div>
       </figure>
     </div>
   );
 }
+
+export default BeforeAfter;

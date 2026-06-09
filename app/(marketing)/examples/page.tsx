@@ -1,82 +1,13 @@
 import type { Metadata } from "next";
 import { Container, Section, Eyebrow, Badge, ButtonLink } from "@/components/ui";
 import { BeforeAfter } from "@/components/marketing/BeforeAfter";
-import {
-  type Glyph,
-  HomeIcon,
-  ChartIcon,
-  BellIcon,
-  UserIcon,
-  SettingsIcon,
-  SearchIcon,
-  CalendarIcon,
-  LockIcon,
-  HeartIcon,
-  StarIcon,
-  FolderIcon,
-  BoltIcon,
-  GridIcon,
-  DownloadIcon,
-  ImageIcon,
-  SparkleIcon,
-} from "@/components/marketing/icons";
+import { FAMILY_ORDER, getFamily } from "@/components/marketing/icon-families";
 
 export const metadata: Metadata = {
   title: "Examples",
   description:
-    "See how Asset Arsenal turns different design images — SaaS dashboards, gaming overlays, AI app mockups, creator dashboards, and brand kits — into matched icon packs.",
+    "See how Asset Arsenal turns different design images — SaaS dashboards, stream overlays, AI assistants, creator studios, and fintech dashboards — into matched, style-aware icon packs.",
 };
-
-interface Example {
-  kind: string;
-  title: string;
-  description: string;
-  accent: string;
-  glyphs: Glyph[];
-}
-
-const EXAMPLES: Example[] = [
-  {
-    kind: "SaaS dashboard",
-    title: "SaaS dashboard → icon pack",
-    description:
-      "A clean analytics dashboard with thin-line icons becomes a tidy navigation and metrics set.",
-    accent: "text-primary",
-    glyphs: [HomeIcon, ChartIcon, BellIcon, UserIcon, SettingsIcon, SearchIcon, CalendarIcon, FolderIcon],
-  },
-  {
-    kind: "Gaming overlay",
-    title: "Gaming overlay → icon pack",
-    description:
-      "A bold stream overlay turns into punchy badge-style icons for alerts, stats, and rewards.",
-    accent: "text-accent",
-    glyphs: [BoltIcon, StarIcon, HeartIcon, BellIcon, UserIcon, ChartIcon, LockIcon, GridIcon],
-  },
-  {
-    kind: "AI app mockup",
-    title: "AI app mockup → icon pack",
-    description:
-      "A futuristic AI product concept yields a sleek duotone set for chat, prompts, and history.",
-    accent: "text-primary",
-    glyphs: [SparkleIcon, SearchIcon, ImageIcon, FolderIcon, SettingsIcon, BoltIcon, UserIcon, GridIcon],
-  },
-  {
-    kind: "Creator dashboard",
-    title: "Creator dashboard → icon pack",
-    description:
-      "A content creator's studio view becomes icons for uploads, audience, schedule, and earnings.",
-    accent: "text-accent",
-    glyphs: [ImageIcon, ChartIcon, CalendarIcon, HeartIcon, DownloadIcon, BellIcon, UserIcon, StarIcon],
-  },
-  {
-    kind: "Brand kit",
-    title: "Brand kit → icon pack",
-    description:
-      "A brand style frame produces a cohesive icon family on-brand with the source palette and shapes.",
-    accent: "text-primary",
-    glyphs: [StarIcon, HeartIcon, BoltIcon, SparkleIcon, FolderIcon, GridIcon, HomeIcon, SettingsIcon],
-  },
-];
 
 export default function ExamplesPage() {
   return (
@@ -89,11 +20,14 @@ export default function ExamplesPage() {
               Any design. Any style. Its own icon pack.
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-muted">
-              A few kinds of images people bring to Asset Arsenal, and the
-              matched packs they get back.
+              Five very different products go in. Five distinct, perfectly
+              style-matched icon families come out — same concepts, drawn in each
+              design&apos;s own language.
             </p>
             <div className="mt-6 flex justify-center">
-              <Badge>Illustrative — visuals are representative, not real outputs</Badge>
+              <Badge>
+                Illustrative — visuals are representative, not real outputs
+              </Badge>
             </div>
           </div>
         </Container>
@@ -101,26 +35,31 @@ export default function ExamplesPage() {
 
       <Section>
         <Container>
-          <div className="space-y-8">
-            {EXAMPLES.map((ex) => (
-              <article
-                key={ex.kind}
-                className="rounded-3xl border border-border bg-surface/40 p-5 sm:p-8"
-              >
-                <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <Badge className="mb-3">{ex.kind}</Badge>
-                    <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                      {ex.title}
-                    </h2>
+          <div className="space-y-8 sm:space-y-10">
+            {FAMILY_ORDER.map((id, idx) => {
+              const fam = getFamily(id);
+              return (
+                <article
+                  key={id}
+                  className="rounded-3xl border border-border bg-surface/40 p-5 sm:p-8"
+                >
+                  <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <Badge className="mb-3">
+                        {String(idx + 1).padStart(2, "0")} · {fam.mockupTitle}
+                      </Badge>
+                      <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                        {fam.mockupTitle} → {fam.label} icon pack
+                      </h2>
+                    </div>
+                    <p className="max-w-md text-sm leading-relaxed text-muted">
+                      {fam.tagline}
+                    </p>
                   </div>
-                  <p className="max-w-md text-sm leading-relaxed text-muted">
-                    {ex.description}
-                  </p>
-                </div>
-                <BeforeAfter glyphs={ex.glyphs} accent={ex.accent} />
-              </article>
-            ))}
+                  <BeforeAfter family={id} />
+                </article>
+              );
+            })}
           </div>
 
           <div className="mt-14 text-center">

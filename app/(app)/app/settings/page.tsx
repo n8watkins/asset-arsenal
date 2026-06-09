@@ -37,9 +37,22 @@ export default async function SettingsPage() {
       </header>
 
       <Card className="space-y-5">
-        <h2 className="text-sm font-medium uppercase tracking-widest text-muted">
-          Account
-        </h2>
+        <div className="flex items-center gap-4 border-b border-border pb-5">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-2 text-base font-semibold text-foreground ring-1 ring-border">
+            {(user.name ?? "AA")
+              .trim()
+              .split(/\s+/)
+              .slice(0, 2)
+              .map((p) => p[0]?.toUpperCase() ?? "")
+              .join("") || "AA"}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-foreground">
+              {user.name ?? "Demo User"}
+            </p>
+            <p className="truncate text-sm text-muted">{user.email ?? "—"}</p>
+          </div>
+        </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Name" value={user.name ?? "—"} />
           <Field label="Email" value={user.email ?? "—"} />

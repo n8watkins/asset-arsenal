@@ -236,8 +236,8 @@ export function NewRunFlow({ creditsBalance }: { creditsBalance: number }) {
             className={cn(
               "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors",
               dragOver
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-foreground/30",
+                ? "border-primary bg-primary/10"
+                : "border-border hover:border-foreground/30 hover:bg-surface-2/40",
             )}
           >
             {previewUrl ? (
@@ -249,8 +249,20 @@ export function NewRunFlow({ creditsBalance }: { creditsBalance: number }) {
               />
             ) : (
               <>
+                <span
+                  className={cn(
+                    "mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface-2 transition-colors",
+                    dragOver ? "border-primary/40 text-accent" : "text-muted",
+                  )}
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 16V4m0 0L8 8m4-4 4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
                 <p className="text-sm font-medium text-foreground">
-                  Drag &amp; drop an image, or click to browse
+                  Drag &amp; drop an image, or{" "}
+                  <span className="text-accent">click to browse</span>
                 </p>
                 <p className="mt-1 text-xs text-muted">
                   PNG, JPG, or WEBP · up to 10MB
@@ -387,7 +399,7 @@ export function NewRunFlow({ creditsBalance }: { creditsBalance: number }) {
             {results.map((icon) => (
               <div
                 key={icon.key}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-surface-2 p-4 text-center"
+                className="group/icon flex flex-col items-center gap-2.5 rounded-xl border border-border bg-surface-2 p-4 text-center transition-colors hover:border-foreground/25"
               >
                 <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-border bg-background">
                   {icon.imageUrl ? (
@@ -397,21 +409,29 @@ export function NewRunFlow({ creditsBalance }: { creditsBalance: number }) {
                       alt={icon.name}
                       className="h-full w-full object-contain"
                     />
+                  ) : busy ? (
+                    <span
+                      className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-accent"
+                      aria-label="Generating"
+                    />
                   ) : (
-                    <span className="text-xs text-muted">
-                      {busy ? "…" : "pending"}
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted">
+                      pending
                     </span>
                   )}
                 </div>
-                <p className="truncate text-xs font-medium text-foreground">
+                <p className="w-full truncate text-xs font-medium text-foreground">
                   {icon.name}
                 </p>
                 {icon.imageUrl && (
                   <a
                     href={icon.imageUrl}
                     download={`${icon.name}.png`}
-                    className="text-xs text-accent hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-accent transition-colors hover:text-foreground"
                   >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M6 1.5v6m0 0L3.75 5.25M6 7.5l2.25-2.25M2 9.5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
                     Download
                   </a>
                 )}
@@ -445,34 +465,49 @@ function Stepper({ current }: { current: Step }) {
     { n: 4, label: "Results" },
   ];
   return (
-    <ol className="flex items-center gap-2 text-xs">
-      {steps.map((s, i) => (
-        <li key={s.n} className="flex items-center gap-2">
-          <span
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-medium",
-              current === s.n
-                ? "border-primary bg-primary text-primary-foreground"
-                : current > s.n
-                  ? "border-border bg-surface-2 text-foreground"
-                  : "border-border text-muted",
+    <ol className="flex items-center gap-1 text-xs sm:gap-2">
+      {steps.map((s, i) => {
+        const done = current > s.n;
+        const active = current === s.n;
+        return (
+          <li key={s.n} className="flex items-center gap-1.5 sm:gap-2">
+            <span
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors",
+                active
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/30"
+                  : done
+                    ? "border-primary/40 bg-primary/15 text-accent"
+                    : "border-border text-muted",
+              )}
+            >
+              {done ? (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M2.5 6.2l2.2 2.3L9.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                s.n
+              )}
+            </span>
+            <span
+              className={cn(
+                "hidden font-medium sm:inline",
+                current >= s.n ? "text-foreground" : "text-muted",
+              )}
+            >
+              {s.label}
+            </span>
+            {i < steps.length - 1 && (
+              <span
+                className={cn(
+                  "mx-1 h-px w-4 transition-colors sm:w-8",
+                  done ? "bg-primary/40" : "bg-border",
+                )}
+              />
             )}
-          >
-            {s.n}
-          </span>
-          <span
-            className={cn(
-              current >= s.n ? "text-foreground" : "text-muted",
-              "hidden sm:inline",
-            )}
-          >
-            {s.label}
-          </span>
-          {i < steps.length - 1 && (
-            <span className="mx-1 h-px w-4 bg-border sm:w-8" />
-          )}
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ol>
   );
 }

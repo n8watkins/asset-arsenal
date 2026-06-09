@@ -6,9 +6,9 @@ function Wordmark() {
   return (
     <Link
       href="/"
-      className="flex items-center gap-2 font-semibold tracking-tight text-foreground"
+      className="group flex items-center gap-2.5 font-semibold tracking-tight text-foreground"
     >
-      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-bright to-primary text-primary-foreground shadow-[0_4px_16px_-4px_var(--primary)] transition-transform duration-200 group-hover:scale-105">
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -31,7 +31,7 @@ function Wordmark() {
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/55">
       <Container className="flex h-16 items-center justify-between">
         <Wordmark />
 
@@ -40,7 +40,7 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground"
+              className="relative rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground"
             >
               {link.label}
             </Link>

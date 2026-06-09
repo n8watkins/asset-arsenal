@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/session";
 import { features } from "@/lib/env";
 import { getDb } from "@/lib/db";
 import { iconRuns, type IconRun } from "@/lib/db/schema";
+import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -54,24 +55,27 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-6 sm:flex-row sm:items-center sm:justify-between sm:p-7">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Welcome back{user.name ? `, ${user.name.split(" ")[0]}` : ""}
           </h1>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1.5 text-sm text-muted">
             You have{" "}
             <span className="font-medium text-foreground">
-              {user.creditsBalance} credits
-            </span>
-            .{" "}
-            <Link href="/app/credits" className="text-accent hover:underline">
+              {user.creditsBalance} credit{user.creditsBalance === 1 ? "" : "s"}
+            </span>{" "}
+            ready to spend.{" "}
+            <Link
+              href="/app/credits"
+              className="font-medium text-accent transition-colors hover:text-foreground"
+            >
               Buy credits
             </Link>
           </p>
         </div>
-        <ButtonLink href="/app/new" size="lg">
-          + New icon pack
+        <ButtonLink href="/app/new" size="lg" className="shrink-0">
+          <span className="text-base leading-none">+</span> New icon pack
         </ButtonLink>
       </header>
 
@@ -90,13 +94,14 @@ export default async function DashboardPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {runs.map((run) => (
-              <Link key={run.id} href={`/app/runs/${run.id}`}>
-                <Card className="h-full transition-colors hover:border-foreground/30">
+              <Link key={run.id} href={`/app/runs/${run.id}`} className="group">
+                <Card className="h-full transition-all group-hover:border-foreground/30 group-hover:shadow-md">
                   <div className="flex items-start justify-between gap-3">
                     <Badge
-                      className={
-                        STATUS_STYLES[run.status] ?? "bg-surface-2 text-muted"
-                      }
+                      className={cn(
+                        "capitalize",
+                        STATUS_STYLES[run.status] ?? "bg-surface-2 text-muted",
+                      )}
                     >
                       {run.status}
                     </Badge>
@@ -104,13 +109,18 @@ export default async function DashboardPage() {
                       {formatDate(run.createdAt)}
                     </span>
                   </div>
-                  <p className="mt-4 text-sm font-medium text-foreground">
+                  <p className="mt-5 text-xl font-semibold tracking-tight text-foreground">
                     {run.iconCount} icon{run.iconCount === 1 ? "" : "s"}
                   </p>
-                  <p className="mt-1 text-xs text-muted">
-                    {run.creditsSpent} credit
-                    {run.creditsSpent === 1 ? "" : "s"} spent
-                  </p>
+                  <div className="mt-1 flex items-center justify-between">
+                    <p className="text-xs text-muted">
+                      {run.creditsSpent} credit
+                      {run.creditsSpent === 1 ? "" : "s"} spent
+                    </p>
+                    <span className="text-xs font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">
+                      View →
+                    </span>
+                  </div>
                 </Card>
               </Link>
             ))}

@@ -6,12 +6,12 @@ export function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="border-t border-border bg-background">
+    <footer className="section-divider bg-background">
       <Container className="py-14">
         <div className="grid gap-10 md:grid-cols-[1.5fr_1fr_1fr]">
           <div className="max-w-xs">
-            <div className="flex items-center gap-2 font-semibold tracking-tight text-foreground">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="flex items-center gap-2.5 font-semibold tracking-tight text-foreground">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-bright to-primary text-primary-foreground shadow-[0_4px_16px_-4px_var(--primary)]">
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"

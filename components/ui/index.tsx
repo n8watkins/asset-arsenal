@@ -37,18 +37,20 @@ type ButtonVariant = "primary" | "secondary" | "ghost";
 type ButtonSize = "sm" | "md" | "lg";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none";
+  "group/btn relative inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px disabled:opacity-50 disabled:pointer-events-none";
 
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-foreground hover:bg-primary/90",
-  secondary: "bg-surface-2 text-foreground hover:bg-surface-2/70 border border-border",
-  ghost: "text-foreground hover:bg-surface-2/60",
+  primary:
+    "btn-primary-gradient text-primary-foreground hover:-translate-y-0.5",
+  secondary:
+    "border border-border bg-surface-2/70 text-foreground backdrop-blur-sm hover:border-primary/40 hover:bg-surface-2 hover:-translate-y-0.5",
+  ghost: "text-muted hover:text-foreground hover:bg-surface-2/60",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-sm",
-  md: "h-10 px-4 text-sm",
-  lg: "h-12 px-6 text-base",
+  sm: "h-8 px-3.5 text-sm",
+  md: "h-10 px-5 text-sm",
+  lg: "h-12 px-7 text-base",
 };
 
 export function buttonClass(
@@ -109,7 +111,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-surface p-6 shadow-sm",
+        "rounded-2xl border border-border bg-surface p-6 shadow-sm transition-colors hover:border-primary/30",
         className,
       )}
     >
@@ -128,7 +130,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-medium text-muted",
+        "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2/80 px-3 py-1 text-xs font-medium text-muted backdrop-blur-sm",
         className,
       )}
     >
@@ -139,7 +141,8 @@ export function Badge({
 
 export function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-3 text-sm font-medium uppercase tracking-widest text-accent">
+    <p className="mb-3 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-accent">
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_10px_var(--accent)]" />
       {children}
     </p>
   );

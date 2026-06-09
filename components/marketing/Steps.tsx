@@ -40,20 +40,25 @@ export function Steps({ className }: { className?: string }) {
   return (
     <ol
       className={cn(
-        "grid gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:gap-3",
+        "relative grid gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:gap-3",
         className,
       )}
     >
+      {/* Connecting line across the row (large screens). */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-0 right-0 top-[2.65rem] hidden h-px bg-gradient-to-r from-transparent via-border to-transparent lg:block"
+      />
       {STEPS.map((step, i) => (
         <li
           key={step.title}
-          className="relative flex flex-col rounded-2xl border border-border bg-surface p-5"
+          className="group relative flex flex-col rounded-2xl border border-border bg-surface p-5 transition-colors hover:border-primary/40"
         >
           <div className="mb-4 flex items-center justify-between">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-2 text-accent">
+            <span className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-primary/25 bg-gradient-to-br from-primary/20 to-surface-2 text-accent shadow-[0_0_18px_-6px_var(--primary)] transition-transform duration-200 group-hover:scale-105">
               <step.Icon className="h-5 w-5" />
             </span>
-            <span className="text-sm font-mono text-muted">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background font-mono text-xs font-semibold text-muted transition-colors group-hover:border-accent/40 group-hover:text-accent">
               {String(i + 1).padStart(2, "0")}
             </span>
           </div>
