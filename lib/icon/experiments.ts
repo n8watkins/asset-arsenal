@@ -143,35 +143,6 @@ extra decoration in the icons themselves.
 Input icon manifest:
 ${T.manifest}`;
 
-// --- §5 wrapper (alt: strongly opinionated dark-mode aesthetic) ---
-const WRAPPER_OPINIONATED = `Create exactly one isolated reusable icon asset.
-
-Use the attached icon collection image as the visual style reference. Match the same
-icon family style, stroke weight, glow intensity, proportions, padding, and dark-mode
-presentation.
-
-Shared icon family style:
-${T.sharedStyle}
-
-Icon to generate:
-${T.iconName}
-
-Icon concept:
-${T.iconConcept}
-
-Icon-specific prompt:
-${T.iconPrompt}
-
-Output requirements:
-- generate one icon only
-- 1:1 square composition
-- centered with generous padding
-- no text, letters, numbers, label, dashboard, card UI, chart UI, button UI
-- no extra objects or decorative clutter
-- transparent background if supported; otherwise use a simple dark navy background
-- preserve the premium dark-mode SaaS/developer-dashboard icon family style
-- make the icon reusable as a standalone dashboard asset`;
-
 export const VARIANTS: PromptVariant[] = [
   // §1 analyze — the three strategies
   {
@@ -277,14 +248,6 @@ export const VARIANTS: PromptVariant[] = [
       iconConcept: T.iconConcept,
       iconPrompt: T.iconPrompt,
     }),
-  },
-  {
-    id: "generateIcons:opinionated",
-    step: "generateIcons",
-    label: "Opinionated dark-mode aesthetic",
-    hypothesis:
-      "A strong, opinionated 'premium dark-mode SaaS' aesthetic may yield a more cohesive family, even if less faithful to the source.",
-    template: WRAPPER_OPINIONATED,
   },
 ];
 
