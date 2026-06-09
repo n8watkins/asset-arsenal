@@ -10,7 +10,7 @@
  *  - the generation pipeline (spendCredits / refundCredits)
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { users, creditTransactions } from "@/lib/db/schema";
 
@@ -46,6 +46,8 @@ interface GrantOpts {
   description?: string;
   /** Stripe event id — makes purchase grants idempotent (unique column). */
   stripeEventId?: string;
+  /** Request IP — recorded on free_grant rows for per-IP farming caps. */
+  ip?: string;
 }
 
 /**
@@ -84,9 +86,46 @@ export async function grantCredits(
       balanceAfter,
       description: opts.description,
       stripeEventId: opts.stripeEventId,
+      ip: opts.ip,
     });
     return balanceAfter;
   });
+}
+
+/** True if this user has ever received a free_grant (signup bonus). */
+export async function hasReceivedFreeGrant(userId: string): Promise<boolean> {
+  const db = getDb();
+  const row = await db
+    .select({ id: creditTransactions.id })
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.userId, userId),
+        eq(creditTransactions.type, "free_grant"),
+      ),
+    )
+    .get();
+  return Boolean(row);
+}
+
+/** Count free_grant rows from a given IP within the last `windowSeconds`. */
+export async function countFreeGrantsByIp(
+  ip: string,
+  windowSeconds: number,
+): Promise<number> {
+  const cutoff = Math.floor(Date.now() / 1000) - windowSeconds;
+  const row = await getDb()
+    .select({ count: sql<number>`count(*)` })
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.ip, ip),
+        eq(creditTransactions.type, "free_grant"),
+        gte(creditTransactions.createdAt, cutoff),
+      ),
+    )
+    .get();
+  return row?.count ?? 0;
 }
 
 /**

@@ -26,8 +26,8 @@ npm run dev               # http://localhost:3000
 ```
 
 On `/login` use **Dev Login** (any email, no password). It creates a real user,
-grants the 5 signup credits, and logs you in. The dev login provider is **never**
-registered in production.
+grants the 3 signup credits (on first `/app` load), and logs you in. The dev
+login provider is **never** registered in production.
 
 ---
 

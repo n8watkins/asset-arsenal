@@ -21,7 +21,7 @@ runs they advertised.
 
 | Pack          | Price | Credits (= icons) | Price / icon |
 | ------------- | ----- | ----------------- | ------------ |
-| Free Preview  | $0    | 5                 | —            |
+| Free Preview  | $0    | 3                 | —            |
 | Mini Pack     | $5    | 10                | $0.50        |
 | Standard Pack | $9    | 25                | $0.36        |
 | Builder Pack  | $19   | 75                | $0.25        |
@@ -63,7 +63,9 @@ needed.
 ## Free credits & expiry
 
 - **Purchased credits:** do not expire (or 12 months — TBD).
-- **Free / signup credits:** new accounts get `SIGNUP_FREE_CREDITS` (5). Consider
-  expiring after 14–30 days.
+- **Free / signup credits:** new accounts get `SIGNUP_FREE_CREDITS` (3), granted
+  on first app load via `ensureSignupBonus()`. Anti-farming: idempotent per user,
+  and in production capped at `MAX_FREE_GRANTS_PER_IP` (3) grants per IP / 24h, so
+  one machine can't mint unlimited free accounts. Consider expiring after 14–30 days.
 - **Refunds:** credits are refunded only for system/API failures. User-disliked
   outputs can be regenerated, which costs credits.

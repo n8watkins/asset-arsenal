@@ -34,9 +34,6 @@ import {
   sessions,
   verificationTokens,
 } from "@/lib/db/schema";
-import { grantCredits } from "@/lib/credits";
-import { SIGNUP_FREE_CREDITS } from "@/lib/pricing";
-
 /* Augment the session/jwt with our product fields. */
 declare module "next-auth" {
   interface Session {
@@ -97,18 +94,11 @@ function devCredentialsProvider() {
           };
         }
 
-        // New dev user — insert and grant the signup bonus once.
+        // New dev user — insert. The signup bonus is granted on first app
+        // load via ensureSignupBonus() so the per-IP farming cap can apply.
         const id = crypto.randomUUID();
         const name = email.split("@")[0] || "Dev User";
         await db.insert(users).values({ id, email, name });
-        try {
-          await grantCredits(id, SIGNUP_FREE_CREDITS, {
-            type: "free_grant",
-            description: "signup bonus",
-          });
-        } catch {
-          // Don't block dev login if the grant fails.
-        }
         return { id, email, name };
       } catch {
         return null;
@@ -183,24 +173,9 @@ const authConfig: NextAuthConfig = {
       return session;
     },
   },
-  events: {
-    /**
-     * Grant the signup bonus exactly once when an OAuth (Google) user row is
-     * created via the adapter. (Dev credentials grants its own bonus in
-     * authorize() since it bypasses the adapter's createUser.)
-     */
-    async createUser({ user }) {
-      if (!features.db || !user?.id) return;
-      try {
-        await grantCredits(user.id, SIGNUP_FREE_CREDITS, {
-          type: "free_grant",
-          description: "signup bonus",
-        });
-      } catch {
-        // Don't block account creation if the grant fails.
-      }
-    },
-  },
+  // The signup bonus is granted on first authenticated app load via
+  // ensureSignupBonus() (lib/signup-bonus.ts), not in a createUser event, so we
+  // have the request IP available to apply the per-IP anti-farming cap.
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);

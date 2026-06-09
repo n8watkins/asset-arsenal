@@ -91,6 +91,9 @@ export const creditTransactions = sqliteTable("credit_transaction", {
   amount: integer("amount").notNull(), // signed: +grant, -spend
   balanceAfter: integer("balance_after"),
   description: text("description"),
+  // Request IP recorded on free_grant rows so we can cap signup-bonus farming
+  // per IP. Null for non-grant / unknown-IP rows.
+  ip: text("ip"),
   // Stripe event id for idempotency — unique so we never grant twice.
   stripeEventId: text("stripe_event_id").unique(),
   createdAt: integer("created_at").notNull().default(now),

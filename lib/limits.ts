@@ -21,6 +21,12 @@ export const MAX_RUNS_PER_HOUR = 20;
 /** Max source-image upload size, in bytes (10MB). */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+/** Max number of free signup-bonus grants allowed from a single IP per window. */
+export const MAX_FREE_GRANTS_PER_IP = 3;
+
+/** Rolling window for the per-IP free-grant cap (24 hours, in seconds). */
+export const FREE_GRANT_IP_WINDOW_SECONDS = 24 * 60 * 60;
+
 /** Allowed source-image content types. */
 export const ALLOWED_UPLOAD_CONTENT_TYPES = new Set<string>([
   "image/png",
