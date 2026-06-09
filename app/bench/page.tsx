@@ -119,6 +119,37 @@ const CHAIN_LABEL: Record<StepKey, string> = {
   generateIcons: "§5 icons",
 };
 
+// Section number (1-indexed) for a chain step.
+function stepNum(step: StepKey): number {
+  return CHAIN_ORDER.indexOf(step) + 1;
+}
+
+// What a chain run needs already present to *begin* at a given step. Returns a
+// friendly message naming the missing artifact, or null if the start is valid.
+// Upstream steps are skipped, so their outputs must already live in shared state
+// (from an earlier run, a manual section, or a pasted/pulled value).
+function missingForStart(step: StepKey, s: BenchState): string | null {
+  switch (step) {
+    case "analyze":
+      return s.sourceDataUrl ? null : "§1 needs a source image — add one below.";
+    case "collectionPrompt":
+      return s.manifest ? null : "Starting at §2 needs a manifest (run §1 first).";
+    case "collectionImage":
+      if (!s.sourceDataUrl) return "Starting at §3 needs a source image (§1).";
+      if (!s.manifest) return "Starting at §3 needs a manifest (§1).";
+      if (!s.collectionPrompt) return "Starting at §3 needs a collection prompt (§2).";
+      return null;
+    case "individualPrompts":
+      if (!s.collectionImageDataUrl) return "Starting at §4 needs a collection image (§3).";
+      if (!s.manifest) return "Starting at §4 needs a manifest (§1).";
+      return null;
+    case "generateIcons":
+      if (!s.collectionImageDataUrl) return "Starting at §5 needs a collection image (§3).";
+      if (!s.individualPrompts) return "Starting at §5 needs icon prompts (§4).";
+      return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Shared UI primitives
 // ---------------------------------------------------------------------------
@@ -236,6 +267,12 @@ function ImageInput({
     [onChange],
   );
 
+  const clear = useCallback(() => {
+    onChange(null, null);
+    // Reset the file input so re-selecting the same file fires onChange again.
+    if (inputRef.current) inputRef.current.value = "";
+  }, [onChange]);
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-3 flex-wrap">
@@ -246,6 +283,15 @@ function ImageInput({
           className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-cyan-400/80 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
         />
         <span className="text-sm text-zinc-600">or drop / browse below</span>
+        {value && (
+          <button
+            type="button"
+            onClick={clear}
+            className="ml-auto rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-400 transition-colors hover:border-red-700/60 hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            ✕ Remove image
+          </button>
+        )}
       </div>
       <div
         onDragOver={(e) => {
@@ -260,19 +306,33 @@ function ImageInput({
           if (f && f.type.startsWith("image/")) load(f);
         }}
         onClick={() => inputRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+        className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-colors ${
           dragging
             ? "border-cyan-500 bg-cyan-950/20"
             : "border-zinc-700 hover:border-zinc-500 bg-zinc-800/30"
         }`}
       >
         {value ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={value}
-            alt="preview"
-            className="max-h-40 max-w-full rounded-lg object-contain"
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={value}
+              alt="preview"
+              className="max-h-40 max-w-full rounded-lg object-contain"
+            />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                clear();
+              }}
+              title="Remove image"
+              aria-label="Remove image"
+              className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full border border-zinc-600 bg-zinc-900/80 text-zinc-300 transition-colors hover:border-red-600 hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              ✕
+            </button>
+          </>
         ) : (
           <p className="text-zinc-500 text-sm text-center">
             Drag &amp; drop an image, or click to browse
@@ -403,6 +463,8 @@ function StackPicker({
 // ---------------------------------------------------------------------------
 
 function ChainControl({
+  from,
+  onFrom,
   target,
   onTarget,
   iconLimit,
@@ -412,8 +474,10 @@ function ChainControl({
   currentStep,
   done,
   error,
-  hasSource,
+  blocked,
 }: {
+  from: StepKey;
+  onFrom: (s: StepKey) => void;
   target: StepKey;
   onTarget: (s: StepKey) => void;
   iconLimit: number | null;
@@ -423,9 +487,14 @@ function ChainControl({
   currentStep: StepKey | null;
   done: StepKey[];
   error: string | null;
-  hasSource: boolean;
+  blocked: string | null;
 }) {
+  const fromIdx = CHAIN_ORDER.indexOf(from);
   const targetIdx = CHAIN_ORDER.indexOf(target);
+  const runLabel =
+    fromIdx === targetIdx
+      ? `▸ Run §${stepNum(from)}`
+      : `▸ Run §${stepNum(from)}–§${stepNum(target)}`;
 
   return (
     <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4">
@@ -433,6 +502,19 @@ function ChainControl({
         <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
           Run chain
         </span>
+        <span className="text-sm text-zinc-400">from</span>
+        <select
+          value={from}
+          onChange={(e) => onFrom(e.target.value as StepKey)}
+          disabled={busy}
+          className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2 text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+        >
+          {CHAIN_ORDER.map((k) => (
+            <option key={k} value={k}>
+              {CHAIN_LABEL[k]}
+            </option>
+          ))}
+        </select>
         <span className="text-sm text-zinc-400">through</span>
         <select
           value={target}
@@ -465,33 +547,35 @@ function ChainControl({
         <RunButton
           onClick={onRun}
           busy={busy}
-          disabled={!hasSource}
-          label="▸ Run to here"
+          disabled={!!blocked}
+          label={runLabel}
         />
-        {!hasSource && (
-          <span className="text-zinc-500 text-sm">Add a source image in §1 first.</span>
-        )}
+        {blocked && <span className="text-zinc-500 text-sm">{blocked}</span>}
       </div>
 
-      {/* Progress strip across the targeted steps. */}
+      {/* Progress strip. Steps inside the from→through range are active; steps
+          before `from` are skipped (their output is reused from shared state). */}
       <div className="flex flex-wrap items-center gap-1.5">
         {CHAIN_ORDER.map((k, i) => {
-          const included = i <= targetIdx;
+          const inRange = i >= fromIdx && i <= targetIdx;
+          const skipped = i < fromIdx;
           const isDone = done.includes(k);
           const isRunning = currentStep === k;
-          const cls = !included
-            ? "text-zinc-600 border-zinc-800 bg-zinc-900"
-            : isDone
-              ? "text-emerald-300 border-emerald-800/50 bg-emerald-950/40"
-              : isRunning
-                ? "text-cyan-300 border-cyan-700/50 bg-cyan-950/40 animate-pulse"
-                : "text-zinc-400 border-zinc-700 bg-zinc-800";
+          const cls = skipped
+            ? "text-zinc-500 border-zinc-800 bg-zinc-900 line-through decoration-zinc-700"
+            : !inRange
+              ? "text-zinc-600 border-zinc-800 bg-zinc-900"
+              : isDone
+                ? "text-emerald-300 border-emerald-800/50 bg-emerald-950/40"
+                : isRunning
+                  ? "text-cyan-300 border-cyan-700/50 bg-cyan-950/40 animate-pulse"
+                  : "text-zinc-400 border-zinc-700 bg-zinc-800";
           return (
             <span
               key={k}
               className={`font-mono text-xs rounded-md border px-2.5 py-1 ${cls}`}
             >
-              {isDone ? "✓ " : isRunning ? "● " : ""}
+              {isDone ? "✓ " : isRunning ? "● " : skipped ? "↩ " : ""}
               {CHAIN_LABEL[k]}
             </span>
           );
@@ -499,11 +583,13 @@ function ChainControl({
       </div>
 
       <p className="text-zinc-600 text-xs">
-        Runs every step from the source image up to the selected one, in order,
-        feeding each output to the next — then persists images to the gallery.
-        The icon count caps how many prompts §4 composes (so &ldquo;1&rdquo; makes a
-        one-icon request, not compose-all-then-pick). Each step is also still
-        runnable on its own below.
+        Runs the selected range in order, feeding each output to the next —
+        steps before <span className="text-zinc-400">from</span> are skipped and
+        reuse whatever&apos;s already on the page (so you can run §1–§4, inspect,
+        then continue §5). Images persist to the gallery as they&apos;re made.
+        The icon count caps how many prompts §4 composes (so &ldquo;1&rdquo;
+        makes a one-icon request, not compose-all-then-pick). Each step is also
+        still runnable on its own below.
       </p>
 
       {error && <ErrorMsg msg={error} />}
@@ -1269,46 +1355,67 @@ export default function BenchPage() {
     [],
   );
 
-  // ---- Chain orchestrator: run §1 → chosen depth automatically ----
+  // ---- Chain orchestrator: run a §from → §through range automatically ----
+  // The range is dynamic: steps before `from` are skipped and their outputs are
+  // pulled from shared state, so you can run §1–§4, inspect, then continue §5.
+  const [chainFrom, setChainFrom] = useState<StepKey>("analyze");
   const [chainTarget, setChainTarget] = useState<StepKey>("generateIcons");
   const [chainBusy, setChainBusy] = useState(false);
   const [chainStep, setChainStep] = useState<StepKey | null>(null);
   const [chainDone, setChainDone] = useState<StepKey[]>([]);
   const [chainError, setChainError] = useState<string | null>(null);
 
+  // Keep from ≤ through whichever end the user moves.
+  const selectChainFrom = useCallback((s: StepKey) => {
+    setChainFrom(s);
+    setChainTarget((t) =>
+      CHAIN_ORDER.indexOf(s) > CHAIN_ORDER.indexOf(t) ? s : t,
+    );
+  }, []);
+  const selectChainTarget = useCallback((s: StepKey) => {
+    setChainTarget(s);
+    setChainFrom((f) =>
+      CHAIN_ORDER.indexOf(s) < CHAIN_ORDER.indexOf(f) ? s : f,
+    );
+  }, []);
+
   const runChain = useCallback(async () => {
-    const src = state.sourceDataUrl;
-    if (!src) {
-      setChainError("Provide a source image in §1 before running the chain.");
+    const blocked = missingForStart(chainFrom, state);
+    if (blocked) {
+      setChainError(blocked);
       return;
     }
+    const fromIdx = CHAIN_ORDER.indexOf(chainFrom);
     const targetIdx = CHAIN_ORDER.indexOf(chainTarget);
+    const inRange = (i: number) => i >= fromIdx && i <= targetIdx;
     const { models, quality } = state.stack;
+    const src = state.sourceDataUrl;
 
     setChainBusy(true);
     setChainError(null);
     setChainDone([]);
     setChainStep(null);
 
-    // Thread artifacts through locals — setState is async, so we can't read
+    // Seed artifacts from shared state (skipped upstream steps reuse these),
+    // then thread them through locals — setState is async, so we can't read
     // `state` back mid-cascade.
     let manifest = state.manifest;
     let collectionPrompt = state.collectionPrompt;
     let collectionImage = state.collectionImageDataUrl;
     let individualPrompts = state.individualPrompts;
     const done: StepKey[] = [];
-    let running: StepKey = chainTarget; // tracked locally for accurate error labels
+    let running: StepKey = chainFrom; // tracked locally for accurate error labels
 
     try {
-      if (targetIdx >= 0) {
+      if (inRange(0)) {
         running = "analyze";
         setChainStep("analyze");
-        manifest = (await analyzeImage(src, state.sourceFileName ?? undefined, models.analyze)).manifest;
+        manifest = (await analyzeImage(src!, state.sourceFileName ?? undefined, models.analyze)).manifest;
         patch({ manifest });
         done.push("analyze");
         setChainDone([...done]);
       }
-      if (targetIdx >= 1) {
+      if (inRange(1)) {
         running = "collectionPrompt";
         setChainStep("collectionPrompt");
         collectionPrompt = (await composeCollectionPrompt(manifest!, models.collectionPrompt)).collectionPrompt;
@@ -1316,12 +1423,12 @@ export default function BenchPage() {
         done.push("collectionPrompt");
         setChainDone([...done]);
       }
-      if (targetIdx >= 2) {
+      if (inRange(2)) {
         running = "collectionImage";
         setChainStep("collectionImage");
         collectionImage = (
           await generateCollectionImage({
-            sourceImageBase64: src,
+            sourceImageBase64: src!,
             manifest: manifest!,
             collectionPrompt: collectionPrompt!,
             model: models.collectionImage,
@@ -1333,7 +1440,7 @@ export default function BenchPage() {
         done.push("collectionImage");
         setChainDone([...done]);
       }
-      if (targetIdx >= 3) {
+      if (inRange(3)) {
         running = "individualPrompts";
         setChainStep("individualPrompts");
         individualPrompts = (
@@ -1347,7 +1454,7 @@ export default function BenchPage() {
         done.push("individualPrompts");
         setChainDone([...done]);
       }
-      if (targetIdx >= 4) {
+      if (inRange(4)) {
         running = "generateIcons";
         setChainStep("generateIcons");
         const { generatedIcons } = await generateIconsBatch({
@@ -1368,6 +1475,14 @@ export default function BenchPage() {
         done.push("generateIcons");
         setChainDone([...done]);
       }
+
+      // Advance the start to the step after this range so the next click
+      // continues where we left off (e.g. ran §1–§4 → next run is §5).
+      const nextIdx = Math.min(targetIdx + 1, CHAIN_ORDER.length - 1);
+      setChainFrom(CHAIN_ORDER[nextIdx]);
+      setChainTarget((t) =>
+        CHAIN_ORDER.indexOf(t) < nextIdx ? CHAIN_ORDER[nextIdx] : t,
+      );
     } catch (err) {
       setChainError(
         `${CHAIN_LABEL[running]} failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -1376,7 +1491,7 @@ export default function BenchPage() {
       setChainStep(null);
       setChainBusy(false);
     }
-  }, [state, chainTarget, patch]);
+  }, [state, chainFrom, chainTarget, patch]);
 
   // Saved stacks come from localStorage; load once on mount (client-only).
   const [savedStacks, setSavedStacks] = useState<Stack[]>([]);
@@ -1425,8 +1540,10 @@ export default function BenchPage() {
           />
 
           <ChainControl
+            from={chainFrom}
+            onFrom={selectChainFrom}
             target={chainTarget}
-            onTarget={setChainTarget}
+            onTarget={selectChainTarget}
             iconLimit={state.iconLimit}
             onIconLimit={(n) => patch({ iconLimit: n })}
             onRun={runChain}
@@ -1434,7 +1551,7 @@ export default function BenchPage() {
             currentStep={chainStep}
             done={chainDone}
             error={chainError}
-            hasSource={!!state.sourceDataUrl}
+            blocked={missingForStart(chainFrom, state)}
           />
 
           <Section1 state={state} patch={patch} />
