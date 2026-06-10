@@ -49,6 +49,18 @@ function splitDataUrl(dataUrl: string): { mimeType: string; data: string } {
 // runAgent — intent classification + op emission
 // ---------------------------------------------------------------------------
 
+// Router-specific rules appended to the base system instruction. These cover
+// conversational context (state.recentMessages) and image-only turns; they
+// OVERRIDE the base prompt's "prefer source intents when an image is attached"
+// guidance for the empty-text case.
+const AGENT_ROUTER_CONTEXT = `
+
+IMAGE-ONLY MESSAGES (overrides the clarify guidance above): when an image is attached and the user wrote NO text, choose intent "clarify" and ask ONE short, friendly question about what they'd like to do with the image (e.g. polish it up first, or pull an icon pack straight from it). Do not pick a generation intent from a bare image alone — unless state.recentMessages makes the goal obvious (e.g. you just asked them to attach the image for a specific step).
+
+WORKING SOURCE PERSISTS ACROSS TURNS: when state.hasOriginal is true, an image the user sent EARLIER in this conversation is already stored as the project's working source. Follow-up text-only messages ("make it darker", "extract the icons") refer to THAT image — never ask the user to re-attach or re-send it.
+
+RECENT CONVERSATION: state.recentMessages holds the last few user/assistant chat turns (oldest first, truncated). Judge terse messages ("yes", "go", "the second one") and bare images against this recent conversation and the project state, and resolve them to the most plausible intent. Choose "clarify" only when the message is genuinely ambiguous even with this context.`;
+
 const agentResponseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -103,10 +115,14 @@ export async function runAgent(args: {
   const model = args.model ?? FABLE_MODELS.analysis;
   const start = Date.now();
 
-  // Build the user-turn parts: state JSON + text + optional image.
+  // Build the user-turn parts: state JSON + text + optional image. An empty
+  // text with an image is a valid turn — flag it explicitly for the router.
+  const userText =
+    args.text.trim() ||
+    (args.imageBase64 ? "(no text — the user sent only an image)" : "");
   type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
   const parts: Part[] = [
-    { text: `PROJECT STATE:\n${JSON.stringify(args.state, null, 2)}\n\nUSER MESSAGE:\n${args.text}` },
+    { text: `PROJECT STATE:\n${JSON.stringify(args.state, null, 2)}\n\nUSER MESSAGE:\n${userText}` },
   ];
   if (args.imageBase64) {
     const { mimeType, data } = splitDataUrl(args.imageBase64);
@@ -121,7 +137,7 @@ export async function runAgent(args: {
       model,
       contents: [{ role: "user", parts }],
       config: {
-        systemInstruction: AGENT_SYSTEM_INSTRUCTION,
+        systemInstruction: AGENT_SYSTEM_INSTRUCTION + AGENT_ROUTER_CONTEXT,
         responseMimeType: "application/json",
         responseSchema: agentResponseSchema,
         temperature: 0,

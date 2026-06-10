@@ -13,7 +13,9 @@ const modelField = z.string().min(1).optional();
 
 // POST /api/fable/agent
 export const AgentRequestSchema = z.object({
-  text: z.string().min(1, "text is required"),
+  // Empty text is allowed — an image-only send routes to the agent, which
+  // classifies it (typically "clarify": ask what to do with the image).
+  text: z.string().default(""),
   imageBase64: imageBase64Field.nullable(),
   state: z.object({
     stage: z.enum(FABLE_STAGES),
@@ -26,6 +28,12 @@ export const AgentRequestSchema = z.object({
     sheetApproved: z.boolean(),
     finalsCount: z.number().int().min(0),
     newImageThisTurn: z.boolean().optional().default(false),
+    // Last few user/assistant chat turns so the router can judge terse
+    // messages and bare images against the recent conversation.
+    recentMessages: z
+      .array(z.object({ role: z.enum(["user", "assistant"]), text: z.string() }))
+      .optional()
+      .default([]),
   }),
   model: modelField,
 });

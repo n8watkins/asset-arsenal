@@ -46,6 +46,7 @@ import {
   type PreviewSheet,
 } from "./types";
 import { saveProject } from "./store";
+import { getFableSettings } from "./settings";
 import { IMAGE_UPLOAD_LIMITS, MAX_FILE_SIZE_BYTES } from "@/lib/icon/models";
 import { imageCostUSD } from "@/lib/icon/model-reference";
 import { logUsage } from "@/lib/icon/usage-log";
@@ -92,22 +93,50 @@ function freshProject(): FableProject {
   };
 }
 
-/** Read a File into a data URL, validating type/size against the upload limits. */
-function fileToDataUrl(file: File): Promise<string> {
+/** Read a File into a data URL, validating type/size against the upload limits.
+ *  When the global downscale setting is on and the image's longest edge exceeds
+ *  the cap, the image is decoded + redrawn at the cap (aspect preserved):
+ *  PNG stays PNG (transparency), everything else becomes JPEG q0.92. */
+async function fileToDataUrl(file: File): Promise<string> {
   if (!(IMAGE_UPLOAD_LIMITS.allowedMimeTypes as readonly string[]).includes(file.type)) {
-    return Promise.reject(
-      new Error(
-        `Unsupported type "${file.type || "unknown"}". Allowed: PNG, JPEG, WebP.`,
-      ),
+    throw new Error(
+      `Unsupported type "${file.type || "unknown"}". Allowed: PNG, JPEG, WebP.`,
     );
   }
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return Promise.reject(
-      new Error(
-        `${(file.size / 1024 / 1024).toFixed(1)} MB exceeds the ${IMAGE_UPLOAD_LIMITS.maxFileSizeMB} MB limit.`,
-      ),
+    throw new Error(
+      `${(file.size / 1024 / 1024).toFixed(1)} MB exceeds the ${IMAGE_UPLOAD_LIMITS.maxFileSizeMB} MB limit.`,
     );
   }
+
+  const { downscaleMaxEdge } = getFableSettings();
+  if (downscaleMaxEdge > 0) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const longest = Math.max(bitmap.width, bitmap.height);
+      if (longest > downscaleMaxEdge) {
+        const scale = downscaleMaxEdge / longest;
+        const w = Math.max(1, Math.round(bitmap.width * scale));
+        const h = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(bitmap, 0, 0, w, h);
+          bitmap.close();
+          // PNG keeps transparency; everything else re-encodes as JPEG.
+          return file.type === "image/png"
+            ? canvas.toDataURL("image/png")
+            : canvas.toDataURL("image/jpeg", 0.92);
+        }
+      }
+      bitmap.close();
+    } catch {
+      /* decode/draw failed — fall through to the verbatim read below */
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Could not read the image file."));

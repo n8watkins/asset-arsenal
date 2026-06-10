@@ -5,7 +5,7 @@
 // that send immediately. The composer ref is owned by the page so a drop anywhere
 // on the page lands its image here.
 
-import { forwardRef } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import Composer, { type ComposerHandle } from "./Composer";
 
 const EXAMPLES = [
@@ -22,6 +22,19 @@ type HeroProps = {
 };
 
 function Hero({ busy, dragging, onSend }: HeroProps, ref: React.Ref<ComposerHandle>) {
+  // Local handle on the composer so the example chips below can route through
+  // sendQuick (keeping any attached image / draft text); the page's ref is a
+  // passthrough to the same handle.
+  const composerRef = useRef<ComposerHandle>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      attach: (f) => composerRef.current?.attach(f),
+      sendQuick: (t) => composerRef.current?.sendQuick(t),
+    }),
+    [],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
       <div className="w-full max-w-2xl">
@@ -38,14 +51,14 @@ function Hero({ busy, dragging, onSend }: HeroProps, ref: React.Ref<ComposerHand
           </p>
         </div>
 
-        <Composer ref={ref} variant="hero" busy={busy} dragging={dragging} onSend={onSend} />
+        <Composer ref={composerRef} variant="hero" busy={busy} dragging={dragging} onSend={onSend} />
 
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           {EXAMPLES.map((ex) => (
             <button
               key={ex}
               disabled={busy}
-              onClick={() => onSend(ex, null)}
+              onClick={() => composerRef.current?.sendQuick(ex)}
               className="rounded-full border border-zinc-800 bg-zinc-900/50 px-3.5 py-1.5 text-xs text-zinc-400 transition-colors hover:border-cyan-500/40 hover:text-cyan-200 disabled:opacity-40"
             >
               {ex}

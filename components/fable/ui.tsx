@@ -3,6 +3,7 @@
 // Fable Bench — small shared UI primitives (dark zinc / cyan language).
 
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableStage } from "@/lib/fable/types";
@@ -166,7 +167,13 @@ export function ArtifactCard({
 
 /** Full-screen lightbox: Escape closes, body scroll locks while open, and the
  *  image gets Download / Open-in-new-tab actions (object URL — browsers refuse
- *  to open multi-MB data URLs directly) plus an optional caption line. */
+ *  to open multi-MB data URLs directly) plus an optional caption line.
+ *
+ *  Rendered through a portal onto document.body: artifact cards animate in
+ *  with `.fable-card-in` (fill-mode: both leaves a transform applied), and a
+ *  transformed ancestor becomes the containing block for position:fixed —
+ *  which would trap the lightbox inside the chat column. The portal escapes
+ *  every such ancestor, for all call sites. */
 export function Lightbox({
   src,
   caption,
@@ -194,7 +201,9 @@ export function Lightbox({
     };
   }, [onClose]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-black/80 p-6 backdrop-blur-sm"
       onClick={onClose}
@@ -235,6 +244,7 @@ export function Lightbox({
       >
         ✕
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }

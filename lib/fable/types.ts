@@ -139,6 +139,9 @@ export type FableStateSummary = {
   /** A NEW image arrived with THIS message while a source already exists —
    *  source-replacing intents should act on the new image. */
   newImageThisTurn: boolean;
+  /** Last few user/assistant chat turns (truncated) — context for the router
+   *  so terse messages and bare images are judged against the conversation. */
+  recentMessages: { role: "user" | "assistant"; text: string }[];
 };
 
 // ---------------------------------------------------------------------------
@@ -308,6 +311,16 @@ export function summarizeProject(p: FableProject): FableStateSummary {
     sheetApproved: p.sheets.some((s) => s.status === "approved"),
     finalsCount: p.finals.filter((f) => f.status === "success").length,
     newImageThisTurn: false, // callers override when an image rode this turn
+    recentMessages: p.events
+      .filter(
+        (e): e is Extract<FableEvent, { kind: "user_message" | "assistant" }> =>
+          e.kind === "user_message" || e.kind === "assistant",
+      )
+      .slice(-6)
+      .map((e) => ({
+        role: e.kind === "user_message" ? ("user" as const) : ("assistant" as const),
+        text: e.text.slice(0, 200),
+      })),
   };
 }
 

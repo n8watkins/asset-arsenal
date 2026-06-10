@@ -204,7 +204,9 @@ export default function FablePage() {
                         <button
                           key={q}
                           disabled={working}
-                          onClick={() => fable.sendMessage(q, null)}
+                          // Through the composer handle so any draft text +
+                          // attached image ride along with the chip text.
+                          onClick={() => composerRef.current?.sendQuick(q)}
                           className="rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300 transition-colors hover:border-cyan-500/50 hover:text-cyan-200 disabled:opacity-40"
                         >
                           {q}

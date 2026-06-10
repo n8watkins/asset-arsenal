@@ -16,6 +16,10 @@ import { IMAGE_UPLOAD_LIMITS } from "@/lib/icon/models";
 export type ComposerHandle = {
   /** Drop an externally-provided file into the composer (page-level drag-drop). */
   attach: (file: File) => void;
+  /** Quick-action chip send: merges the chip text with the current draft text
+   *  (chip first, draft on a new line) AND the attached image, then submits
+   *  through the normal onSend and clears the composer. */
+  sendQuick: (chipText: string) => void;
 };
 
 type ComposerProps = {
@@ -38,8 +42,6 @@ function Composer(
 
   const hero = variant === "hero";
 
-  useImperativeHandle(ref, () => ({ attach: (f: File) => setImage(f) }), []);
-
   // Object-URL preview for the attached image chip.
   useEffect(() => {
     if (!image) {
@@ -56,17 +58,37 @@ function Composer(
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, hero ? 220 : 160)}px`;
+    ta.style.height = `${Math.min(ta.scrollHeight, hero ? 320 : 260)}px`;
   }, [text, hero]);
 
-  function submit() {
+  function send(t: string, img: File | null) {
     if (busy) return;
-    if (!text.trim() && !image) return;
-    onSend(text.trim(), image);
+    if (!t.trim() && !img) return;
+    onSend(t.trim(), img);
     setText("");
     setImage(null);
     if (fileRef.current) fileRef.current.value = "";
   }
+
+  function submit() {
+    send(text, image);
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      attach: (f: File) => setImage(f),
+      // Chip text first, then any draft text on a new line; the attached
+      // image rides along — nothing in the composer gets dropped.
+      sendQuick: (chipText: string) => {
+        const draft = text.trim();
+        send(draft ? `${chipText}\n${draft}` : chipText, image);
+      },
+    }),
+    // send closes over text/image/busy/onSend — rebuild the handle when they move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [text, image, busy, onSend],
+  );
 
   return (
     <div
@@ -82,10 +104,10 @@ function Composer(
     >
       {preview && (
         <div className="mb-2 flex flex-wrap gap-2 px-1 pt-1">
-          <div className="group relative inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950/60 p-1.5">
+          <div className="group relative inline-flex flex-col items-center gap-1 rounded-xl border border-zinc-700 bg-zinc-950/60 p-1.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="attachment" className="h-12 w-12 rounded-lg object-cover" />
-            <span className="max-w-[140px] truncate pr-1 text-xs text-zinc-400">
+            <img src={preview} alt="attachment" className="h-16 w-16 rounded-lg object-cover" />
+            <span className="max-w-[80px] truncate text-[10px] text-zinc-400">
               {image?.name ?? "image"}
             </span>
             <button
@@ -141,7 +163,7 @@ function Composer(
           }
           disabled={busy}
           className={`flex-1 resize-none bg-transparent text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50 ${
-            hero ? "px-2 py-2.5 text-base" : "px-1.5 py-2 text-sm"
+            hero ? "px-2 py-2.5 text-base" : "px-1.5 py-2 text-base"
           }`}
         />
         <button
