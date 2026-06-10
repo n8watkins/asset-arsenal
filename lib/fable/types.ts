@@ -386,6 +386,10 @@ export type FinalIconRequest = {
   referenceImageBase64: string; // the APPROVED PREVIEW SHEET (style anchor)
   sharedStylePrompt: string;
   icon: { id: string; name: string; concept: string; prompt: string };
+  /** Where this icon sits on the reference sheet, e.g. "row 2, column 3 of a
+   *  3×3 grid" — lets the model REPRODUCE that exact rendering instead of
+   *  redrawing from text (which drifts in color/weight). */
+  sheetPosition?: string;
   quality?: ImageQuality;
 };
 export type FinalIconResponse = {

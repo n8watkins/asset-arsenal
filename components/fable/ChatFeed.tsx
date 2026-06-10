@@ -154,7 +154,7 @@ export default function ChatFeed({
             project={project}
             busy={!!busy.step}
             dimmed={sheet.status === "superseded"}
-            onGenerateFinals={fable.approveAndGenerateFinals}
+            onGenerateFinals={() => fable.approveSheetAndGenerateFinals(sheet.id)}
             onRegenerateSheet={fable.regenerateSheet}
             onTryAnotherSheet={(instruction) =>
               fable.sendMessage(`Try another sheet: ${instruction}`, null)

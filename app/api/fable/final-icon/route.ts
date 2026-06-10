@@ -21,7 +21,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const { referenceImageBase64, sharedStylePrompt, icon, quality } = parsed.data;
+  const { referenceImageBase64, sharedStylePrompt, icon, sheetPosition, quality } =
+    parsed.data;
 
   // Assemble the wrapped prompt in code — no model call needed.
   const wrappedPrompt = buildFinalIconWrapper({
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
     name: icon.name,
     concept: icon.concept,
     prompt: icon.prompt,
+    sheetPosition,
   });
 
   try {

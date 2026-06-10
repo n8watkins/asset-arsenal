@@ -137,6 +137,7 @@ export type UseFable = {
   runAnalyze: (guidance?: string) => Promise<void>;
   runPreviews: () => Promise<void>;
   approveAndGenerateFinals: () => Promise<void>;
+  approveSheetAndGenerateFinals: (sheetId: string) => Promise<void>;
   retryFinal: (iconId: string) => Promise<void>;
   regenerateSheet: (sheetId: string, instruction: string) => Promise<void>;
   removeCandidate: (id: string) => void;
@@ -270,6 +271,7 @@ export function useFable(): UseFable {
         stage: "source_review",
       }));
       appendStep("improve_source_image", true, "Improved source ready.");
+      void saveProject(projectRef.current); // flush — pixels are precious
     },
     [appendStep, appendUsage, mutate],
   );
@@ -348,6 +350,7 @@ export function useFable(): UseFable {
       };
       mutate((p) => ({ ...p, sheets: [...p.sheets, sheet] }));
       appendStep("preview_image", true, `Preview sheet ${sheetIndex} ready.`);
+      void saveProject(projectRef.current); // flush — pixels are precious
     }
     mutate((p) => ({ ...p, stage: "preview_review" }));
   }, [appendStep, appendUsage, mutate]);
@@ -387,6 +390,7 @@ export function useFable(): UseFable {
       };
       mutate((p) => ({ ...p, sheets: [...p.sheets, sheet], stage: "preview_review" }));
       appendStep("preview_image", true, `Sheet ${sheetIndex} ready.`);
+      void saveProject(projectRef.current); // flush — pixels are precious
     },
     [appendStep, appendUsage, mutate],
   );
@@ -432,6 +436,17 @@ export function useFable(): UseFable {
         // The reference is the approved sheet containing this icon, else the first.
         const ref =
           approvedSheets.find((s) => s.iconIds.includes(iconId)) ?? fallbackSheet;
+        // Tell the model WHERE on the sheet this icon already lives, so it
+        // reproduces that exact rendering instead of redrawing from text.
+        let sheetPosition: string | undefined;
+        if (ref) {
+          const idx = ref.iconIds.indexOf(iconId);
+          if (idx >= 0) {
+            const row = Math.floor(idx / ref.grid.cols) + 1;
+            const col = (idx % ref.grid.cols) + 1;
+            sheetPosition = `row ${row}, column ${col} of a ${ref.grid.rows}×${ref.grid.cols} grid`;
+          }
+        }
         mutate((p) => ({
           ...p,
           finals: p.finals.map((f) =>
@@ -448,6 +463,7 @@ export function useFable(): UseFable {
               concept: cand.concept,
               prompt: cand.prompt,
             },
+            sheetPosition,
           });
           appendUsage(res.usage);
           mutate((p) => ({
@@ -456,6 +472,9 @@ export function useFable(): UseFable {
               f.iconId === iconId ? { ...res.final } : f,
             ),
           }));
+          // Generated pixels are precious — flush to IndexedDB immediately
+          // rather than waiting out the debounce (a reload could lose them).
+          void saveProject(projectRef.current);
           appendStep("final_icon", res.final.status === "success", `${cand.name}: ${res.final.status}.`);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -573,29 +592,21 @@ export function useFable(): UseFable {
   const executeReviseIcons = useCallback(
     async (ops: FableOp[], userText: string): Promise<void> => {
       const p0 = projectRef.current;
+      const inFinals = p0.stage === "finals";
 
-      // (b) regenerate_icon ops while in finals → re-run final-icon for those ids.
-      const regenIds = ops
-        .filter((o) => o.op === "regenerate_icon" && o.iconId)
-        .map((o) => o.iconId!) as string[];
-      if (regenIds.length > 0 && p0.stage === "finals") {
-        await generateFinalsFor(regenIds);
-      }
+      const regenOps = ops.filter((o) => o.op === "regenerate_icon" && o.iconId);
+      const regenIds = regenOps.map((o) => o.iconId!);
 
-      // (c) new_sheet → render one more sheet variant with the instruction.
-      const newSheetOps = ops.filter((o) => o.op === "new_sheet");
-      for (const op of newSheetOps) {
-        const active = projectRef.current.candidates.filter(
-          (c) => c.status === "active",
-        );
-        const chunk = chunkForSheets(active)[0] ?? active;
-        await generateSingleSheet(chunk, op.instruction ?? userText);
-      }
-
-      // (a) prompt-affecting ops → revise-prompts, then maybe regen previews.
-      const promptOps = ops.filter((o) =>
-        ["edit_icon", "remove_icon", "add_icon", "restyle_set"].includes(o.op),
-      );
+      // (a) prompt-affecting ops → revise-prompts FIRST, so any regeneration
+      // below picks up the rewritten prompts. A regenerate_icon carrying an
+      // instruction is an edit in disguise — the server treats it as one.
+      const promptOps = [
+        ...ops.filter((o) =>
+          ["edit_icon", "remove_icon", "add_icon", "restyle_set"].includes(o.op),
+        ),
+        ...regenOps.filter((o) => o.instruction?.trim()),
+      ];
+      let revised = false;
       if (promptOps.length > 0) {
         const cur = projectRef.current;
         if (!cur.style || !cur.sharedStylePrompt) {
@@ -615,10 +626,31 @@ export function useFable(): UseFable {
           sharedStylePrompt: res.sharedStylePrompt,
         }));
         appendStep("revise_prompts", true, "Icon set updated.");
+        revised = true;
+      }
 
-        // If we were reviewing previews, the drafts are now stale → supersede
-        // and re-render.
-        if (cur.stage === "preview_review") {
+      // (b) regenerate_icon while in finals → re-run final-icon for those ids
+      // (after the prompt revision above, so the new prompt is what renders).
+      if (inFinals && regenIds.length > 0) {
+        await generateFinalsFor(regenIds);
+      }
+
+      // (c) new_sheet → render one more sheet variant with the instruction.
+      const newSheetOps = ops.filter((o) => o.op === "new_sheet");
+      for (const op of newSheetOps) {
+        const active = projectRef.current.candidates.filter(
+          (c) => c.status === "active",
+        );
+        const chunk = chunkForSheets(active)[0] ?? active;
+        await generateSingleSheet(chunk, op.instruction ?? userText);
+      }
+
+      // (d) preview stage: stale sheets need re-rendering. A full prompt
+      // revision supersedes every draft; a bare regenerate only re-renders the
+      // sheet(s) containing the targeted icons (one cell of a raster sheet
+      // can't be redrawn in isolation).
+      if (!inFinals && p0.stage === "preview_review") {
+        if (revised) {
           mutate((p) => ({
             ...p,
             sheets: p.sheets.map((s) =>
@@ -626,6 +658,26 @@ export function useFable(): UseFable {
             ),
           }));
           await generatePreviews();
+        } else if (regenIds.length > 0) {
+          const cur = projectRef.current;
+          const affected = cur.sheets.filter(
+            (s) => s.status === "draft" && s.iconIds.some((id) => regenIds.includes(id)),
+          );
+          for (const sheet of affected) {
+            mutate((p) => ({
+              ...p,
+              sheets: p.sheets.map((s) =>
+                s.id === sheet.id ? { ...s, status: "superseded" } : s,
+              ),
+            }));
+            const icons = cur.candidates.filter(
+              (c) => c.status === "active" && sheet.iconIds.includes(c.id),
+            );
+            await generateSingleSheet(
+              icons,
+              `Re-render this sheet with a fresh, improved take on ${regenIds.join(", ")}; keep every other icon as close to the previous sheet as possible.`,
+            );
+          }
         }
       }
     },
@@ -816,6 +868,33 @@ export function useFable(): UseFable {
     [generateFinalsFor, guard, mutate],
   );
 
+  // Approve ONE sheet and generate finals for ITS icons only — other draft
+  // sheets stay under review (the chat "generate finals" intent is the
+  // approve-everything path).
+  const approveSheetAndGenerateFinals = useCallback(
+    (sheetId: string) =>
+      guard(async () => {
+        const p0 = projectRef.current;
+        const sheet = p0.sheets.find((s) => s.id === sheetId);
+        if (!sheet) throw new Error("Sheet not found.");
+        const otherDrafts = p0.sheets.some(
+          (s) => s.id !== sheetId && s.status === "draft",
+        );
+        mutate((p) => ({
+          ...p,
+          sheets: p.sheets.map((s) =>
+            s.id === sheetId ? { ...s, status: "approved" } : s,
+          ),
+          stage: otherDrafts ? p.stage : "finals",
+        }));
+        const ids = projectRef.current.candidates
+          .filter((c) => c.status === "active" && sheet.iconIds.includes(c.id))
+          .map((c) => c.id);
+        await generateFinalsFor(ids);
+      }),
+    [generateFinalsFor, guard, mutate],
+  );
+
   const retryFinal = useCallback(
     (iconId: string) => guard(() => generateFinalsFor([iconId])),
     [generateFinalsFor, guard],
@@ -885,6 +964,7 @@ export function useFable(): UseFable {
     runAnalyze,
     runPreviews,
     approveAndGenerateFinals,
+    approveSheetAndGenerateFinals,
     retryFinal,
     regenerateSheet,
     removeCandidate,

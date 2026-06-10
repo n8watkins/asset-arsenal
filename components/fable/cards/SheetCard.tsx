@@ -35,6 +35,13 @@ export default function SheetCard({
   const [instruction, setInstruction] = useState("");
   const [lightbox, setLightbox] = useState(false);
 
+  // Open/close a cell popover; the refine input is cleared on every open so
+  // text never leaks from one cell (or sheet) to another.
+  const toggleCell = (i: number) => {
+    setOpenCell((prev) => (prev === i ? null : i));
+    setRefine("");
+  };
+
   const candById = (id: string): IconCandidate | undefined =>
     project.candidates.find((c) => c.id === id);
 
@@ -72,11 +79,25 @@ export default function SheetCard({
             const iconId = sheet.iconIds[i];
             if (!iconId) return <div key={i} />;
             const cand = candById(iconId);
+            // NOT a <button>: the popover inside holds its own button + input,
+            // and nesting interactive elements in a button breaks hydration and
+            // swallows keys (space "clicks" the parent instead of typing).
             return (
-              <button
+              <div
                 key={i}
-                onClick={() => setOpenCell(openCell === i ? null : i)}
-                className="group relative border border-transparent transition-colors hover:border-cyan-500/60 hover:bg-cyan-500/10"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleCell(i)}
+                onKeyDown={(e) => {
+                  // Only treat keys aimed at the CELL itself — never keystrokes
+                  // bubbling up from the popover's input.
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleCell(i);
+                  }
+                }}
+                className="group relative cursor-pointer border border-transparent transition-colors hover:border-cyan-500/60 hover:bg-cyan-500/10 focus:outline-none focus-visible:border-cyan-500/60"
                 title={cand?.name ?? iconId}
               >
                 <span className="pointer-events-none absolute left-1 top-1 rounded bg-zinc-950/80 px-1 text-[9px] font-mono text-cyan-300 opacity-0 transition-opacity group-hover:opacity-100">
@@ -84,7 +105,7 @@ export default function SheetCard({
                 </span>
                 {openCell === i && (
                   <div
-                    className="absolute left-1/2 top-full z-20 mt-1 w-56 -translate-x-1/2 rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-left shadow-xl"
+                    className="absolute left-1/2 top-full z-20 mt-1 w-56 -translate-x-1/2 cursor-default rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-left shadow-xl"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <p className="text-xs font-medium text-zinc-100">{cand?.name ?? iconId}</p>
@@ -103,6 +124,7 @@ export default function SheetCard({
                       value={refine}
                       onChange={(e) => setRefine(e.target.value)}
                       onKeyDown={(e) => {
+                        e.stopPropagation();
                         if (e.key === "Enter" && refine.trim() && !busy) {
                           onIconOp(`For ${iconId} (${cand?.name ?? ""}): ${refine.trim()}`);
                           setRefine("");
@@ -114,7 +136,7 @@ export default function SheetCard({
                     />
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>

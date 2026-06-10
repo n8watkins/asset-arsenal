@@ -314,10 +314,18 @@ export function buildFinalIconWrapper(args: {
   name: string;
   concept: string;
   prompt: string;
+  /** Where the icon sits on the reference sheet, e.g. "row 2, column 3 of a 3×3 grid". */
+  sheetPosition?: string;
 }): string {
+  const grounding = args.sheetPosition
+    ? `The attached reference image (an approved preview sheet) ALREADY CONTAINS the target icon at ${args.sheetPosition}. REPRODUCE that exact icon as a standalone asset — the same exact colors (sample them from that cell; do not substitute), the same stroke weight, fills, gradients, lighting, and finish — cleaned up, centered, and isolated. Do not reinterpret or restyle it. The other cells show the rest of the family; stay perfectly consistent with them. Ignore the grid layout entirely — output a single icon, never multiple.`
+    : `Use the attached reference image (an approved preview sheet) ONLY to understand the icon family's visual style — its colors, stroke weight, proportions, shape language, and finish. The reference is a grid of icons; take ONLY the shared visual style from it. Ignore the grid layout entirely — do not reproduce multiple icons, do not reference the grid structure, do not imitate the sheet's composition.`;
+
   return `Create exactly one isolated, reusable, production-ready icon asset.
 
-Use the attached reference image (an approved preview sheet) ONLY to understand the icon family's visual style — its colors, stroke weight, proportions, shape language, and finish. The reference is a grid of icons; take ONLY the shared visual style from it. Ignore the grid layout entirely — do not reproduce multiple icons, do not reference the grid structure, do not imitate the sheet's composition.
+${grounding}
+
+Color fidelity is the top priority: the standalone icon must use the exact same palette as the reference sheet — matching hues, saturation, and value — so it is indistinguishable in style from the rest of the family.
 
 Match the shared icon family style described below AND the style you read from the reference sheet. Derive the visual style only from those two sources; do not impose any predetermined aesthetic, theme, background, or mood.
 

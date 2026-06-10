@@ -106,6 +106,7 @@ export const FinalIconRequestSchema = z.object({
     concept: z.string(),
     prompt: z.string(),
   }),
+  sheetPosition: z.string().optional(),
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
 
