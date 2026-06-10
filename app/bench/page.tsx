@@ -55,14 +55,25 @@ function fmtUsd(n: number): string {
 
 // Estimated cost label for a bench section, given the selected stack.
 // `single` = the §5 case (one icon) vs §6 (the whole batch).
-function stepCostLabel(stepKey: StepKey, stack: Stack, single = false): string {
+// `batchCount` overrides the stack's nominal iconCount with the real batch size
+// (e.g. §4's actual prompt count) so the estimate matches what would be spent.
+function stepCostLabel(
+  stepKey: StepKey,
+  stack: Stack,
+  single = false,
+  batchCount?: number,
+): string {
   if (single && stepKey === "generateIcons") {
     const per = getModel(stack.models.generateIcons)?.imagePricing?.[stack.quality.generateIcons] ?? 0;
     return `${fmtUsd(per)} / icon`;
   }
   const step = STEPS.find((s) => s.key === stepKey)!;
-  const { cost } = costForStep(step, stack);
-  if (stepKey === "generateIcons") return `${fmtUsd(cost)} · ${stack.iconCount} icons`;
+  const effStack: Stack =
+    stepKey === "generateIcons" && batchCount != null
+      ? { ...stack, iconCount: batchCount }
+      : stack;
+  const { cost } = costForStep(step, effStack);
+  if (stepKey === "generateIcons") return `${fmtUsd(cost)} · ${effStack.iconCount} icons`;
   return fmtUsd(cost);
 }
 
@@ -632,9 +643,11 @@ function ChainControl({
 function Section1({
   state,
   patch,
+  chainBusy,
 }: {
   state: BenchState;
   patch: (p: Partial<BenchState>) => void;
+  chainBusy: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<IconManifest | null>(null);
@@ -687,7 +700,7 @@ function Section1({
           patch({ sourceDataUrl: dataUrl, sourceFileName: fileName })
         }
       />
-      <RunButton onClick={run} busy={busy} disabled={!state.sourceDataUrl} />
+      <RunButton onClick={run} busy={busy} disabled={!state.sourceDataUrl || chainBusy} />
       <OutputTabs
         empty={!error && !result && !state.manifest}
         rawData={result ?? state.manifest ?? (error ? { error } : null)}
@@ -710,9 +723,11 @@ function Section1({
 function Section2({
   state,
   patch,
+  chainBusy,
 }: {
   state: BenchState;
   patch: (p: Partial<BenchState>) => void;
+  chainBusy: boolean;
 }) {
   const [manifestText, setManifestText] = useState(() =>
     JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
@@ -792,7 +807,7 @@ function Section2({
         onTextChange={handleChange}
         parseError={parseError}
       />
-      <RunButton onClick={run} busy={busy} disabled={!!parseError} />
+      <RunButton onClick={run} busy={busy} disabled={!!parseError || chainBusy} />
       <OutputTabs
         empty={!error && !result && !state.collectionPrompt}
         rawData={result ?? state.collectionPrompt ?? (error ? { error } : null)}
@@ -816,10 +831,12 @@ function Section3({
   state,
   patch,
   onPersist,
+  chainBusy,
 }: {
   state: BenchState;
   patch: (p: Partial<BenchState>) => void;
   onPersist: (dataUrl: string) => Promise<number>;
+  chainBusy: boolean;
 }) {
   const [manifestText, setManifestText] = useState(() =>
     JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
@@ -931,7 +948,7 @@ function Section3({
       <RunButton
         onClick={run}
         busy={busy}
-        disabled={!!parseError || !state.sourceDataUrl}
+        disabled={!!parseError || !state.sourceDataUrl || chainBusy}
       />
       {!state.sourceDataUrl && (
         <p className="text-zinc-500 text-sm">Provide a source image first.</p>
@@ -968,9 +985,11 @@ function Section3({
 function Section4({
   state,
   patch,
+  chainBusy,
 }: {
   state: BenchState;
   patch: (p: Partial<BenchState>) => void;
+  chainBusy: boolean;
 }) {
   const [manifestText, setManifestText] = useState(() =>
     JSON.stringify(state.manifest ?? SAMPLE_MANIFEST, null, 2),
@@ -1075,7 +1094,7 @@ function Section4({
       <RunButton
         onClick={run}
         busy={busy}
-        disabled={!!parseError || !state.collectionImageDataUrl}
+        disabled={!!parseError || !state.collectionImageDataUrl || chainBusy}
       />
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">Generate or provide a collection image first (§3).</p>
@@ -1102,9 +1121,11 @@ function Section4({
 function Section5({
   state,
   onPersist,
+  chainBusy,
 }: {
   state: BenchState;
   onPersist: (icons: GeneratedIcon[]) => Promise<number>;
+  chainBusy: boolean;
 }) {
   const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
   const [selectedId, setSelectedId] = useState(prompts.iconPrompts[0]?.iconId);
@@ -1118,6 +1139,29 @@ function Section5({
   const [realized, setRealized] = useState<string | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-sync the editable fields from §4's output. Keeps the current icon
+  // selection when it still exists in the new prompt set.
+  const syncFromState = useCallback(
+    (p: IndividualIconPrompts) => {
+      const keep =
+        p.iconPrompts.find((ip) => ip.iconId === selectedId) ?? p.iconPrompts[0];
+      setSharedStyle(p.sharedStylePrompt);
+      setSelectedId(keep?.iconId);
+      setPromptText(keep?.prompt ?? "");
+    },
+    [selectedId],
+  );
+
+  // Auto-sync whenever §4 (or a chain run) produces a new prompt set — the
+  // seeded-at-mount values would otherwise go stale and a paid image call would
+  // be sent with old fixture text.
+  useEffect(() => {
+    if (state.individualPrompts) syncFromState(state.individualPrompts);
+    // Keyed on the prompts object identity only — re-running on selectedId /
+    // syncFromState changes would clobber in-progress manual edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.individualPrompts]);
 
   const onSelect = (id: string) => {
     setSelectedId(id);
@@ -1182,6 +1226,13 @@ function Section5({
       <p className="text-zinc-500 text-sm italic">
         + the collection image (§3) is attached as the style reference
       </p>
+      <button
+        onClick={() => state.individualPrompts && syncFromState(state.individualPrompts)}
+        disabled={!state.individualPrompts}
+        className="self-start text-sm text-cyan-400/80 hover:text-cyan-300 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        ↑ pull prompts from §4
+      </button>
       <div className="flex flex-col gap-2">
         <label className="text-zinc-400 text-sm font-medium uppercase tracking-wide">
           Pick an icon
@@ -1220,7 +1271,7 @@ function Section5({
           className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-200 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full"
         />
       </div>
-      <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
+      <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl || chainBusy} />
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
@@ -1262,9 +1313,11 @@ function SavedNote({ saved, noun = "icon" }: { saved: number | null; noun?: stri
 function Section6({
   state,
   onPersist,
+  chainBusy,
 }: {
   state: BenchState;
   onPersist: (icons: GeneratedIcon[]) => Promise<number>;
+  chainBusy: boolean;
 }) {
   const prompts = state.individualPrompts ?? SAMPLE_INDIVIDUAL_PROMPTS;
   const [busy, setBusy] = useState(false);
@@ -1308,7 +1361,12 @@ function Section6({
       inputs="collection image + all icon prompts"
       output="all generated icons"
       model={state.stack.models.generateIcons}
-      cost={stepCostLabel("generateIcons", state.stack)}
+      cost={stepCostLabel(
+        "generateIcons",
+        state.stack,
+        false,
+        prompts.iconPrompts.length,
+      )}
       realized={realized}
     >
       <p className="text-zinc-400 text-sm">
@@ -1317,7 +1375,7 @@ function Section6({
         {prompts.iconPrompts.length} icons), each using the collection image as the
         reference.
       </p>
-      <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl} />
+      <RunButton onClick={run} busy={busy} disabled={!state.collectionImageDataUrl || chainBusy} />
       {!state.collectionImageDataUrl && (
         <p className="text-zinc-500 text-sm">A collection image (§3) is required as the reference.</p>
       )}
@@ -1394,23 +1452,31 @@ export default function BenchPage() {
   const [chainError, setChainError] = useState<string | null>(null);
 
   // Estimated cost of the selected range, with the selected stack. §5 scales
-  // with how many icons get generated — the chain caps that at `iconLimit`
-  // (falling back to the stack's iconCount when blank), so reflect that here.
-  const iconCountUsed = state.iconLimit ?? state.stack.iconCount;
+  // with how many icons get generated. If the range re-composes §4, the chain
+  // caps that at `iconLimit` (falling back to the stack's iconCount when
+  // blank); if §4 is skipped, the existing prompt set IS the batch, so use its
+  // real length instead of the stack's nominal count.
+  const iconCountUsed = useMemo(() => {
+    const fromIdx = CHAIN_ORDER.indexOf(chainFrom);
+    const targetIdx = CHAIN_ORDER.indexOf(chainTarget);
+    const promptsIdx = CHAIN_ORDER.indexOf("individualPrompts");
+    const recomposesPrompts = fromIdx <= promptsIdx && targetIdx >= promptsIdx;
+    if (!recomposesPrompts && state.individualPrompts) {
+      return state.individualPrompts.iconPrompts.length;
+    }
+    return state.iconLimit ?? state.stack.iconCount;
+  }, [chainFrom, chainTarget, state.individualPrompts, state.iconLimit, state.stack.iconCount]);
   const chainEst = useMemo(() => {
     const fromIdx = CHAIN_ORDER.indexOf(chainFrom);
     const targetIdx = CHAIN_ORDER.indexOf(chainTarget);
-    const effStack: Stack =
-      state.iconLimit != null
-        ? { ...state.stack, iconCount: state.iconLimit }
-        : state.stack;
+    const effStack: Stack = { ...state.stack, iconCount: iconCountUsed };
     let total = 0;
     for (let i = fromIdx; i <= targetIdx; i++) {
       const step = STEPS.find((s) => s.key === CHAIN_ORDER[i])!;
       total += costForStep(step, effStack).cost;
     }
     return total;
-  }, [chainFrom, chainTarget, state.stack, state.iconLimit]);
+  }, [chainFrom, chainTarget, state.stack, iconCountUsed]);
 
   // Keep from ≤ through whichever end the user moves.
   const selectChainFrom = useCallback((s: StepKey) => {
@@ -1603,12 +1669,12 @@ export default function BenchPage() {
             iconCountUsed={iconCountUsed}
           />
 
-          <Section1 state={state} patch={patch} />
-          <Section2 state={state} patch={patch} />
-          <Section3 state={state} patch={patch} onPersist={persistCollectionImage} />
-          <Section4 state={state} patch={patch} />
-          <Section5 state={state} onPersist={persistIcons} />
-          <Section6 state={state} onPersist={persistIcons} />
+          <Section1 state={state} patch={patch} chainBusy={chainBusy} />
+          <Section2 state={state} patch={patch} chainBusy={chainBusy} />
+          <Section3 state={state} patch={patch} onPersist={persistCollectionImage} chainBusy={chainBusy} />
+          <Section4 state={state} patch={patch} chainBusy={chainBusy} />
+          <Section5 state={state} onPersist={persistIcons} chainBusy={chainBusy} />
+          <Section6 state={state} onPersist={persistIcons} chainBusy={chainBusy} />
         </div>
       </main>
     </>

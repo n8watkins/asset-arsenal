@@ -39,7 +39,7 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
  */
 export async function saveSource(
   source: SourceImage,
-  category?: "source" | "icon-collection" | "icon"
+  category?: StoredSource["category"]
 ): Promise<void> {
   const blob = await dataUrlToBlob(source.imageUrl);
   const db = await getDB();

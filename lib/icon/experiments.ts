@@ -5,8 +5,9 @@
 // changes is the prompt (and the model, which the stack already varies). So an
 // experiment is just "this step, this prompt variant, this model" + a thumbs
 // up/down on the result. This file is the single source of truth for the
-// variants; the /experiments page renders them and (next) the bench will let
-// you pick one per step.
+// variants. NOTE: nothing renders this registry today — the /experiments page
+// runs the cell-based ExperimentRunner instead. It's kept (unwired) for a
+// future "pick a prompt variant per step" bench affordance.
 //
 // Default-variant templates are derived by calling the real builders in
 // lib/icon/prompts.ts with placeholder tokens, so the page can never drift from

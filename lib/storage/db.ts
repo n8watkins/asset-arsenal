@@ -29,8 +29,10 @@ export type StoredSource = {
    * Optional gallery category. IndexedDB records are schemaless, so this is
    * additive and needs no DB version bump. Records written before this field
    * existed will simply have `category === undefined`.
+   * "elevated" = an AI-elevated source produced by Bench S (still usable as a
+   * source everywhere, but badged honestly in the gallery).
    */
-  category?: "source" | "icon-collection" | "icon";
+  category?: "source" | "icon-collection" | "icon" | "elevated";
   blob: Blob;
 };
 

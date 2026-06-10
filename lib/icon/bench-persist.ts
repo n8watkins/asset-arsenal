@@ -5,7 +5,7 @@
 // storage failure must never break a generation, and re-running a step simply
 // appends more icons under the same per-session run record.
 
-import { saveRun, saveIcon, saveSource } from "@/lib/storage/repo";
+import { saveRun, saveIcon, saveSource, getRun } from "@/lib/storage/repo";
 import type {
   GeneratedIcon,
   IconManifest,
@@ -43,23 +43,30 @@ export async function persistBenchIcons(
   const success = icons.filter((g) => g.status === "success" && g.imageUrl);
   if (success.length === 0) return 0;
 
-  await attempt("saveRun", () =>
-    saveRun({
+  await attempt("saveRun", async () => {
+    // Re-running a step appends icons to the same run record — accumulate the
+    // count rather than overwriting it with just the latest batch's size.
+    const existing = await getRun(ctx.runId);
+    await saveRun({
       id: ctx.runId,
       sourceId: ctx.sourceId,
       createdAt: ctx.createdAt,
       manifest: ctx.manifest ?? undefined,
       collectionPrompt: ctx.collectionPrompt ?? undefined,
       individualPrompts: ctx.individualPrompts ?? undefined,
-      iconCount: success.length,
-    }),
-  );
+      iconCount: (existing?.iconCount ?? 0) + success.length,
+    });
+  });
 
+  let saved = 0;
   for (const icon of success) {
-    await attempt(`saveIcon ${icon.id}`, () => saveIcon(icon, ctx.runId));
+    await attempt(`saveIcon ${icon.id}`, async () => {
+      await saveIcon(icon, ctx.runId);
+      saved += 1;
+    });
   }
 
-  return success.length;
+  return saved;
 }
 
 /**

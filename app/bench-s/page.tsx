@@ -16,9 +16,11 @@ import { analyzeStyleBrief, elevateSource } from "@/lib/icon/client-api";
 import { saveSource } from "@/lib/storage/repo";
 import { readImageFile } from "@/lib/icon/download";
 import {
+  CATALOG,
   DEFAULT_STACK,
   estimateStepCostUSD,
   imageCostUSD,
+  realizedTextCostUSD,
   getModel,
   type ImageQuality,
 } from "@/lib/icon/model-reference";
@@ -26,7 +28,9 @@ import { IMAGE_UPLOAD_LIMITS, MAX_FILE_SIZE_BYTES } from "@/lib/icon/models";
 import type { StyleBrief, SourceImage } from "@/types/icon-pipeline";
 
 const ANALYZE_MODEL = DEFAULT_STACK.models.analyze;
-const IMAGE_MODELS = ["gpt-image-1-mini", "gpt-image-1.5", "gpt-image-1", "gpt-image-2"];
+// Derived from the catalog (single source of truth for model facts) instead of
+// a hardcoded list — new image models show up here automatically.
+const IMAGE_MODELS = CATALOG.filter((m) => m.kind === "image").map((m) => m.id);
 const QUALITIES: ImageQuality[] = ["low", "medium", "high"];
 // Modeled marginal cost of the deferred URL→screenshot capture (a screenshot API).
 const SCREENSHOT_COST = 0.003;
@@ -44,6 +48,7 @@ export default function BenchSPage() {
 
   const [briefing, setBriefing] = useState(false);
   const [briefErr, setBriefErr] = useState<string | null>(null);
+  const [briefRan, setBriefRan] = useState<string | null>(null);
   const [elevating, setElevating] = useState(false);
   const [elevateErr, setElevateErr] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
@@ -59,6 +64,7 @@ export default function BenchSPage() {
     setBrief(null);
     setElevated(null);
     setBriefErr(null);
+    setBriefRan(null);
     setElevateErr(null);
     setSavedNote(null);
   }, []);
@@ -91,9 +97,12 @@ export default function BenchSPage() {
     if (!src) return;
     setBriefing(true);
     setBriefErr(null);
+    setBriefRan(null);
     try {
-      const { brief: b } = await analyzeStyleBrief(src.dataUrl, ANALYZE_MODEL);
+      const { brief: b, usage } = await analyzeStyleBrief(src.dataUrl, ANALYZE_MODEL);
       setBrief(b);
+      // Realized cost from the call's reported token usage (not the estimate).
+      setBriefRan(usage ? usd(realizedTextCostUSD(ANALYZE_MODEL, usage)) : null);
     } catch (err) {
       setBriefErr(err instanceof Error ? err.message : String(err));
     } finally {
@@ -124,7 +133,10 @@ export default function BenchSPage() {
         uploadedAt: new Date().toISOString(),
       };
       try {
-        await saveSource(source, "source");
+        // "elevated" (not "source") so the gallery can badge it honestly as
+        // AI-elevated rather than "Uploaded" — it stays in the same group and
+        // remains pickable everywhere a source is.
+        await saveSource(source, "elevated");
         setSavedNote("Saved to gallery as a source — pick it in Bench V2 / V3.");
       } catch {
         setSavedNote("Generated, but saving to the gallery failed.");
@@ -220,7 +232,10 @@ export default function BenchSPage() {
               >
                 {briefing ? "Analyzing…" : "▸ Analyze style"}
               </button>
-              <span className="text-xs text-zinc-500">{ANALYZE_MODEL} · est. {usd(briefCost)}</span>
+              <span className="text-xs text-zinc-500">
+                {ANALYZE_MODEL} · est. {usd(briefCost)}
+                {briefRan ? ` · ran ~${briefRan}` : ""}
+              </span>
             </div>
             {briefErr && <p className="text-sm text-red-400">{briefErr}</p>}
           </section>

@@ -123,6 +123,44 @@ function LinkButton({
 // 1) OutputTabs — wraps the raw + interpreted views with a tab switcher.
 // ---------------------------------------------------------------------------
 
+// Any string longer than this is almost certainly embedded binary/base64, not
+// something worth rendering raw.
+const RAW_STRING_LIMIT = 10_000;
+
+function fmtBytes(n: number): string {
+  return n >= 1024 * 1024
+    ? `${(n / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(n / 1024)} KB`;
+}
+
+// Recursively replace data-URL / huge strings (anywhere in the value — callers
+// pass objects with `imageUrl` data-URL fields, not just bare strings) with a
+// short placeholder so JSON.stringify never dumps megabytes into the <pre>.
+function redactHugeStrings(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (value.startsWith("data:")) {
+      // Keep the readable header (e.g. "data:image/png;base64,") for context.
+      const comma = value.indexOf(",");
+      const header = comma > 0 && comma <= 64 ? value.slice(0, comma + 1) : "data:";
+      return `${header}… (${fmtBytes(value.length)} redacted)`;
+    }
+    if (value.length > RAW_STRING_LIMIT) {
+      return `${value.slice(0, 64)}… (${fmtBytes(value.length)} redacted)`;
+    }
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(redactHugeStrings);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+        k,
+        redactHugeStrings(v),
+      ]),
+    );
+  }
+  return value;
+}
+
 function RawView({ rawData }: { rawData: unknown }) {
   // Don't dump giant base64 data URLs — show a compact note instead.
   if (typeof rawData === "string" && rawData.startsWith("data:")) {
@@ -135,7 +173,9 @@ function RawView({ rawData }: { rawData: unknown }) {
   }
 
   const text =
-    typeof rawData === "string" ? rawData : JSON.stringify(rawData, null, 2);
+    typeof rawData === "string"
+      ? rawData
+      : JSON.stringify(redactHugeStrings(rawData), null, 2);
 
   return (
     <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-zinc-800 bg-zinc-950 p-4 font-mono text-sm text-zinc-300">

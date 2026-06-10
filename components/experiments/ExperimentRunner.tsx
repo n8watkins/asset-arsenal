@@ -94,8 +94,14 @@ export default function ExperimentRunner() {
 
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Run token: bumped on every new run AND on signature change, so in-flight
+  // runOne promises from a previous run/signature can't write stale results
+  // into the current slots.
+  const runTokenRef = useRef(0);
+
   // Reset model picks + results whenever the signature changes.
   useEffect(() => {
+    runTokenRef.current += 1; // invalidate any in-flight runs
     setModelA(models[0]?.id ?? "");
     setModelB(models[1]?.id ?? models[0]?.id ?? "");
     setSharedModel(models[0]?.id ?? "");
@@ -110,30 +116,40 @@ export default function ExperimentRunner() {
       ? sharedPrompt.trim() !== "" && !!modelA && !!modelB
       : promptA.trim() !== "" && promptB.trim() !== "" && !!sharedModel);
 
-  async function runOne(set: (s: Slot) => void, input: Parameters<typeof runCell>[0]) {
-    set({ status: "loading" });
+  async function runOne(
+    set: (s: Slot) => void,
+    input: Parameters<typeof runCell>[0],
+    token: number,
+  ) {
+    // Drop every write once the token is stale (signature switched / new run).
+    const guarded = (s: Slot) => {
+      if (runTokenRef.current === token) set(s);
+    };
+    guarded({ status: "loading" });
     try {
       const result = await runCell(input);
-      set({ status: "done", result });
+      guarded({ status: "done", result });
     } catch (err) {
-      set({ status: "error", error: err instanceof Error ? err.message : "Run failed." });
+      guarded({ status: "error", error: err instanceof Error ? err.message : "Run failed." });
     }
   }
 
   function onRun() {
+    const token = ++runTokenRef.current;
     const settings: CellSettings | undefined = outputsImage ? { quality, background } : undefined;
     const img = needsImage ? image ?? undefined : undefined;
     if (axis === "model") {
-      void runOne(setA, { model: modelA, text: sharedPrompt, image: img, settings });
-      void runOne(setB, { model: modelB, text: sharedPrompt, image: img, settings });
+      void runOne(setA, { model: modelA, text: sharedPrompt, image: img, settings }, token);
+      void runOne(setB, { model: modelB, text: sharedPrompt, image: img, settings }, token);
     } else {
-      void runOne(setA, { model: sharedModel, text: promptA, image: img, settings });
-      void runOne(setB, { model: sharedModel, text: promptB, image: img, settings });
+      void runOne(setA, { model: sharedModel, text: promptA, image: img, settings }, token);
+      void runOne(setB, { model: sharedModel, text: promptB, image: img, settings }, token);
     }
   }
 
   const titleA = axis === "model" ? modelA || "Model A" : "Prompt A";
   const titleB = axis === "model" ? modelB || "Model B" : "Prompt B";
+  const loading = A.status === "loading" || B.status === "loading";
 
   const selectCls =
     "rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 focus:border-cyan-500/50 focus:outline-none";
@@ -151,7 +167,8 @@ export default function ExperimentRunner() {
           <select
             value={sigIdx}
             onChange={(e) => setSigIdx(Number(e.target.value))}
-            className={selectCls}
+            disabled={loading}
+            className={`${selectCls} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {SIGNATURE_PRESETS.map((p, i) => (
               <option key={p.title} value={i}>
@@ -293,7 +310,7 @@ export default function ExperimentRunner() {
         )}
         <button
           onClick={onRun}
-          disabled={!canRun || A.status === "loading" || B.status === "loading"}
+          disabled={!canRun || loading}
           className="ml-auto rounded-lg bg-cyan-500/15 px-5 py-2 text-sm font-semibold text-cyan-300 ring-1 ring-cyan-500/40 transition-colors hover:bg-cyan-500/25 focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Run both

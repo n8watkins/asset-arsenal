@@ -23,6 +23,7 @@ import {
   DEFAULT_STACK,
   estimateStepCostUSD,
   imageCostUSD,
+  realizedTextCostUSD,
 } from "@/lib/icon/model-reference";
 import { IMAGE_UPLOAD_LIMITS, MAX_FILE_SIZE_BYTES } from "@/lib/icon/models";
 import type {
@@ -62,7 +63,9 @@ export default function BenchV2Page() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // One persistence "run" per page load — generated icons land in the gallery.
-  const runIdRef = useRef<string>(crypto.randomUUID());
+  // Lazy init (??=) so we don't generate-and-discard a UUID on every render.
+  const runIdRef = useRef<string | null>(null);
+  runIdRef.current ??= crypto.randomUUID();
   const createdAtRef = useRef<string>(new Date().toISOString());
 
   const includedCount = icons.filter((i) => i.include).length;
@@ -115,6 +118,11 @@ export default function BenchV2Page() {
     setAnalysis(null);
     setIcons([]);
     setResults(null);
+    setAnalyzeErr(null);
+    setGenErr(null);
+    setAnalyzeCost(null);
+    setGenCost(null);
+    setSaved(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -126,10 +134,12 @@ export default function BenchV2Page() {
     setGenErr(null);
     setSaved(null);
     try {
-      const { analysis: a } = await megaAnalyze(ref.dataUrl, ref.fileName, ANALYZE_MODEL);
+      const { analysis: a, usage } = await megaAnalyze(ref.dataUrl, ref.fileName, ANALYZE_MODEL);
       setAnalysis(a);
       setIcons(a.icons.map((ic) => ({ ...ic, include: true })));
-      setAnalyzeCost(fmtUsd(estimateStepCostUSD("analyze", ANALYZE_MODEL)));
+      // Realized cost from the call's reported token usage — not the pre-flight
+      // estimate. If the route didn't report usage, show nothing.
+      setAnalyzeCost(usage ? fmtUsd(realizedTextCostUSD(ANALYZE_MODEL, usage)) : null);
     } catch (err) {
       setAnalyzeErr(err instanceof Error ? err.message : String(err));
     } finally {
@@ -163,9 +173,9 @@ export default function BenchV2Page() {
       const ok = generatedIcons.filter((g) => g.status === "success").length;
       setGenCost(fmtUsd(imageCostUSD(IMAGE_MODEL, IMAGE_QUALITY, ok)));
       const n = await persistBenchIcons(generatedIcons, {
-        runId: runIdRef.current,
+        runId: runIdRef.current!,
         createdAt: createdAtRef.current,
-        sourceId: runIdRef.current,
+        sourceId: runIdRef.current!,
       });
       setSaved(n);
     } catch (err) {

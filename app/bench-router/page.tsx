@@ -9,6 +9,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Nav from "@/components/Nav";
 import { JUDGE_MODELS, DEFAULT_JUDGE_MODEL } from "@/lib/gemini/models";
+import { getModel } from "@/lib/icon/model-reference";
 import { classifyRoute } from "@/lib/router/client";
 import {
   FLOW_META,
@@ -118,7 +119,9 @@ export default function BenchRouterPage() {
     }
   }, [hasImage, text, iconList, model]);
 
-  const isFree = model === "gemini-3.1-flash-lite";
+  // The catalog knows which models we currently call on a free tier — don't
+  // hardcode a single model id here.
+  const isFree = getModel(model)?.freeTier ?? false;
 
   return (
     <>
