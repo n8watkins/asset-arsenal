@@ -44,6 +44,9 @@ export type UsageEntry = {
   provider?: "openai" | "gemini";
   /** Fable: the chat/project this call belonged to. */
   projectId?: string;
+  /** Human name of that project at log time (additive; absent on older
+   *  entries — /usage joins against the Fable store as a fallback). */
+  projectName?: string;
   durationMs?: number;
 };
 

@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
-import { STEPS, type StepKey } from "@/lib/icon/model-reference";
+import { CATALOG, STEPS, type StepKey } from "@/lib/icon/model-reference";
 import {
   loadUsage,
   clearUsage,
@@ -26,7 +26,8 @@ const STEP_LABEL: Record<StepKey, string> = STEPS.reduce(
 );
 
 // Fable's step keys (FableStepKey in lib/fable/types.ts). Kept as plain strings
-// so this page never imports fable code.
+// so this page never statically imports fable code (the Projects view lazily
+// imports the fable store only to resolve project names).
 const FABLE_STEP_LABEL: Record<string, string> = {
   agent_route: "Fable · route intent",
   improve_source_brief: "Fable · upgrade brief",
@@ -74,6 +75,12 @@ function fmtTime(iso: string): string {
   return d.toLocaleString();
 }
 
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString();
+}
+
 // ---------------------------------------------------------------------------
 
 type Rollup = { key: string; count: number; cost: number };
@@ -97,11 +104,97 @@ function benchOf(e: UsageEntry): string {
   return e.bench ?? "pipeline";
 }
 
+// --- Projects view (call log grouped by project) -----------------------------
+
+/** One step+model line inside a project accordion ("5× …route · gemini · $0"). */
+type ProjectRow = {
+  key: string;
+  count: number;
+  label: string;
+  model: string;
+  cost: number;
+  failures: number;
+};
+
+type ProjectGroup = {
+  key: string;
+  bench: string;
+  name: string;
+  count: number;
+  cost: number;
+  failures: number;
+  lastAt: string;
+  rows: ProjectRow[];
+};
+
+/**
+ * Group entries by projectId (entries without one pool under their bench,
+ * e.g. "Icon pipeline — no project"), with the calls inside each group
+ * collapsed by step + model. Names come from the entry itself when logged
+ * (`projectName`), else from the Fable store join, else the short id.
+ */
+function buildProjectGroups(
+  entries: UsageEntry[],
+  fableNames: Map<string, string>,
+): ProjectGroup[] {
+  const groups = new Map<string, ProjectGroup & { rowMap: Map<string, ProjectRow> }>();
+  for (const e of entries) {
+    const bench = benchOf(e);
+    const key = e.projectId ?? `bench:${bench}`;
+    let g = groups.get(key);
+    if (!g) {
+      const name = e.projectId
+        ? (e.projectName ??
+          fableNames.get(e.projectId) ??
+          e.projectId.slice(0, 8))
+        : `${BENCH_LABEL[bench] ?? bench} — no project`;
+      g = {
+        key,
+        bench,
+        name,
+        count: 0,
+        cost: 0,
+        failures: 0,
+        lastAt: e.at,
+        rows: [],
+        rowMap: new Map(),
+      };
+      groups.set(key, g);
+    } else if (e.projectId && e.projectName && g.name === e.projectId.slice(0, 8)) {
+      g.name = e.projectName; // a later entry carries the name an earlier one lacked
+    }
+    g.count += 1;
+    g.cost += e.realizedCost ?? 0;
+    if (!e.ok) g.failures += 1;
+    if (new Date(e.at).getTime() > new Date(g.lastAt).getTime()) g.lastAt = e.at;
+
+    const rowKey = `${e.step}|${e.model}`;
+    let row = g.rowMap.get(rowKey);
+    if (!row) {
+      row = { key: rowKey, count: 0, label: stepLabel(e), model: e.model, cost: 0, failures: 0 };
+      g.rowMap.set(rowKey, row);
+    }
+    row.count += 1;
+    row.cost += e.realizedCost ?? 0;
+    if (!e.ok) row.failures += 1;
+  }
+  return [...groups.values()]
+    .map(({ rowMap, ...g }) => ({
+      ...g,
+      rows: [...rowMap.values()].sort((a, b) => b.cost - a.cost || b.count - a.count),
+    }))
+    .sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime());
+}
+
 // ---------------------------------------------------------------------------
 
 export default function UsagePage() {
   const [allEntries, setAllEntries] = useState<UsageEntry[]>([]);
   const [benchFilter, setBenchFilter] = useState<string>("all");
+  const [logView, setLogView] = useState<"calls" | "projects">("calls");
+  // Fable project id → name, for entries logged before projectName existed.
+  // Dynamic import so this page stays decoupled from fable code unless needed.
+  const [fableNames, setFableNames] = useState<Map<string, string>>(new Map());
 
   function refresh() {
     loadUsage().then(setAllEntries);
@@ -109,6 +202,12 @@ export default function UsagePage() {
 
   useEffect(() => {
     refresh();
+    import("@/lib/fable/store")
+      .then((m) => m.listProjects())
+      .then((ps) => setFableNames(new Map(ps.map((p) => [p.id, p.name]))))
+      .catch(() => {
+        /* fable store unavailable — short ids will show instead */
+      });
   }, []);
 
   async function handleClear() {
@@ -135,7 +234,21 @@ export default function UsagePage() {
     benchOf(e) === "fable" ? `fable:${e.step}` : e.step,
   ).sort((a, b) => (STEP_ORDER[a.key] ?? 99) - (STEP_ORDER[b.key] ?? 99));
   const byModel = rollupBy(entries, (e) => e.model);
-  const byBench = rollupBy(allEntries, benchOf);
+  const byBench = rollupBy(entries, benchOf);
+
+  const projectGroups = logView === "projects" ? buildProjectGroups(entries, fableNames) : [];
+
+  // Gemini free-tier RPD meters: calls per model since LOCAL midnight, across
+  // ALL benches (the quota is account-wide, so the bench filter doesn't apply).
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const geminiQuota = CATALOG.filter((m) => m.freeTierDailyRequests != null).map((m) => ({
+    id: m.id,
+    limit: m.freeTierDailyRequests!,
+    used: allEntries.filter(
+      (e) => e.model === m.id && new Date(e.at).getTime() >= midnight.getTime(),
+    ).length,
+  }));
 
   return (
     <>
@@ -161,22 +274,28 @@ export default function UsagePage() {
             </Link>
           </div>
 
-          {/* Bench filter */}
-          {benches.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2">
-              {["all", ...benches].map((b) => (
-                <button
-                  key={b}
-                  onClick={() => setBenchFilter(b)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition-colors ${
-                    benchFilter === b
-                      ? "bg-cyan-900/40 text-cyan-200 ring-cyan-600/50"
-                      : "bg-zinc-900 text-zinc-400 ring-zinc-700/60 hover:text-zinc-200"
-                  }`}
-                >
-                  {b === "all" ? "All benches" : (BENCH_LABEL[b] ?? b)}
-                </button>
-              ))}
+          {/* Bench selector — scopes the whole page (totals, rollups, call log). */}
+          {benches.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="bench-filter"
+                className="text-xs uppercase tracking-widest text-zinc-500"
+              >
+                Bench
+              </label>
+              <select
+                id="bench-filter"
+                value={benchFilter}
+                onChange={(e) => setBenchFilter(e.target.value)}
+                className="rounded-lg border border-zinc-700/60 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-cyan-600/60"
+              >
+                <option value="all">All benches</option>
+                {benches.map((b) => (
+                  <option key={b} value={b}>
+                    {BENCH_LABEL[b] ?? b}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -217,13 +336,63 @@ export default function UsagePage() {
             </div>
           </section>
 
+          {/* Gemini free-tier daily quota — account-wide, so always all benches. */}
+          {geminiQuota.length > 0 && (
+            <section className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">
+                  Gemini free tier today
+                </h3>
+                <p className="text-xs text-zinc-600">
+                  requests since local midnight, all benches — the daily cap is
+                  account-wide, so the bench selector doesn&apos;t apply here.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3">
+                {geminiQuota.map((q) => {
+                  const pct = (q.used / q.limit) * 100;
+                  return (
+                    <div key={q.id} className="flex flex-col gap-1.5">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="font-mono text-xs text-zinc-300">{q.id}</span>
+                        <span
+                          className={`font-mono text-xs ${
+                            pct >= 100
+                              ? "text-red-400"
+                              : pct > 80
+                                ? "text-amber-300"
+                                : "text-zinc-400"
+                          }`}
+                        >
+                          {q.used} / {q.limit} requests today
+                        </span>
+                      </div>
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-800">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            pct >= 100
+                              ? "bg-red-500"
+                              : pct > 80
+                                ? "bg-amber-400"
+                                : "bg-cyan-500"
+                          }`}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Breakdown */}
           {entries.length > 0 && (
             <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <RollupCard title="Per step" rows={byStep} label={rollupStepLabel} />
               <RollupCard title="Per model" rows={byModel} mono />
               <RollupCard
-                title="Per bench (all entries)"
+                title="Per bench"
                 rows={byBench}
                 label={(k) => BENCH_LABEL[k] ?? k}
               />
@@ -233,7 +402,24 @@ export default function UsagePage() {
           {/* Table + controls */}
           <section className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Call log</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold">Call log</h2>
+                <div className="flex items-center gap-1 rounded-full bg-zinc-950/60 p-1 ring-1 ring-zinc-800">
+                  {(["calls", "projects"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setLogView(v)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        logView === v
+                          ? "bg-cyan-900/40 text-cyan-200 ring-1 ring-cyan-600/50"
+                          : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {v === "calls" ? "Calls" : "Projects"}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button
                 onClick={handleClear}
                 disabled={entries.length === 0}
@@ -248,6 +434,63 @@ export default function UsagePage() {
                 No API calls logged yet. Run the pipeline on the Bench and they&apos;ll
                 show up here.
               </p>
+            ) : logView === "projects" ? (
+              <div className="flex flex-col gap-2">
+                {projectGroups.map((g) => (
+                  <details
+                    key={g.key}
+                    className="group rounded-xl border border-zinc-800 bg-zinc-950/40"
+                  >
+                    <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-4 py-3 hover:bg-zinc-950/60 [&::-webkit-details-marker]:hidden">
+                      <span className="text-zinc-600 transition-transform group-open:rotate-90">
+                        ▸
+                      </span>
+                      <span className="truncate text-sm font-medium text-zinc-200">
+                        {g.name}
+                      </span>
+                      <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400 ring-1 ring-zinc-700/60">
+                        {BENCH_LABEL[g.bench] ?? g.bench}
+                      </span>
+                      {g.failures > 0 && (
+                        <span className="rounded-md bg-red-900/40 px-2 py-0.5 text-xs font-medium text-red-300 ring-1 ring-red-700/40">
+                          {g.failures} failed
+                        </span>
+                      )}
+                      <span className="ml-auto font-mono text-xs text-zinc-500">
+                        {g.count}×
+                      </span>
+                      <span className="font-mono text-xs text-cyan-300">
+                        {usd(g.cost)}
+                      </span>
+                      <span className="whitespace-nowrap text-xs text-zinc-500">
+                        {fmtDate(g.lastAt)}
+                      </span>
+                    </summary>
+                    <div className="flex flex-col gap-1.5 border-t border-zinc-800/60 px-4 py-3">
+                      {g.rows.map((r) => (
+                        <div key={r.key} className="flex items-center gap-3 text-sm">
+                          <span className="w-10 text-right font-mono text-xs text-zinc-500">
+                            {r.count}×
+                          </span>
+                          <span className="truncate text-zinc-300">{r.label}</span>
+                          <span className="text-zinc-700">·</span>
+                          <span className="truncate font-mono text-xs text-zinc-400">
+                            {r.model}
+                          </span>
+                          {r.failures > 0 && (
+                            <span className="whitespace-nowrap text-xs text-red-400">
+                              {r.failures} failed
+                            </span>
+                          )}
+                          <span className="ml-auto font-mono text-xs text-cyan-300">
+                            {usd(r.cost)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">

@@ -51,6 +51,10 @@ export type CatalogModel = {
   // We currently call this model on a free tier — realized cost is $0 even if
   // paid-tier tokenPricing is listed. One switch to flip when we go paid.
   freeTier?: boolean;
+  // Free-tier requests-per-day cap (RPD). Set only on free-tier models we track
+  // daily quota for (the Gemini rows today). Drives the "free tier today"
+  // meters on /usage and the Fable usage panel.
+  freeTierDailyRequests?: number;
   note?: string;
   citations: Citation[];
 };
@@ -63,6 +67,12 @@ export type CatalogModel = {
 const PRICING: Citation = { label: "Pricing", url: "https://developers.openai.com/api/docs/pricing" };
 const DEPRECATIONS: Citation = { label: "Deprecations", url: "https://developers.openai.com/api/docs/deprecations" };
 const GEMINI_MODELS_DOC: Citation = { label: "Gemini models", url: "https://ai.google.dev/gemini-api/docs/models" };
+
+// Gemini free-tier daily request limits (RPD), per model.
+// TODO confirm current published RPD; owner cited 500 for flash-lite.
+const GEMINI_FLASH_LITE_FREE_RPD = 1000;
+const GEMINI_FLASH_FREE_RPD = 250;
+const GEMINI_PRO_FREE_RPD = 100;
 
 export const CATALOG: CatalogModel[] = [
   // --- Text / vision ---
@@ -198,6 +208,7 @@ export const CATALOG: CatalogModel[] = [
     capabilities: ["text", "vision", "structuredOutput"],
     status: "current",
     freeTier: true,
+    freeTierDailyRequests: GEMINI_FLASH_LITE_FREE_RPD,
     note: "Cheapest Gemini tier; default for routing/classification and fable analysis.",
     citations: [GEMINI_MODELS_DOC],
   },
@@ -208,6 +219,7 @@ export const CATALOG: CatalogModel[] = [
     capabilities: ["text", "vision", "structuredOutput"],
     status: "current",
     freeTier: true,
+    freeTierDailyRequests: GEMINI_FLASH_FREE_RPD,
     note: "Stronger reasoning than Flash-Lite; still free-tier.",
     citations: [GEMINI_MODELS_DOC],
   },
@@ -218,6 +230,7 @@ export const CATALOG: CatalogModel[] = [
     capabilities: ["text", "vision", "structuredOutput"],
     status: "current",
     freeTier: true,
+    freeTierDailyRequests: GEMINI_PRO_FREE_RPD,
     note: "Strongest Gemini; for close-call judging.",
     citations: [GEMINI_MODELS_DOC],
   },

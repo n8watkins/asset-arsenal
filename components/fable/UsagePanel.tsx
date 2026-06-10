@@ -10,8 +10,10 @@
 // and a per-step breakdown. Links out to the global /usage page.
 
 import { useEffect, useMemo, useState } from "react";
-import { getAllUsage } from "@/lib/fable/store";
+import { getAllUsage, listProjects } from "@/lib/fable/store";
 import type { FableProject, FableUsageRecord } from "@/lib/fable/types";
+import { loadUsage } from "@/lib/icon/usage-log";
+import { CATALOG } from "@/lib/icon/model-reference";
 import { fmtUsd, Pill } from "./ui";
 
 type Scope = "chat" | "all";
@@ -72,11 +74,33 @@ export default function UsagePanel({
 }) {
   const [scope, setScope] = useState<Scope>("chat");
   const [stored, setStored] = useState<{ projectId: string; usage: FableUsageRecord[] }[]>([]);
+  // Project id → name, for the by-project table (live project name comes from props).
+  const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
+  // Gemini free-tier meter is quota-wide, so it reads the GLOBAL ledger (all
+  // benches) — Fable's own records are per-project and would undercount.
+  const [geminiToday, setGeminiToday] = useState<{ id: string; used: number; limit: number }[]>([]);
 
   useEffect(() => {
     let alive = true;
     void getAllUsage().then((rows) => {
       if (alive) setStored(rows);
+    });
+    void listProjects().then((ps) => {
+      if (alive) setProjectNames(new Map(ps.map((p) => [p.id, p.name])));
+    });
+    void loadUsage().then((entries) => {
+      if (!alive) return;
+      const midnight = new Date();
+      midnight.setHours(0, 0, 0, 0);
+      setGeminiToday(
+        CATALOG.filter((m) => m.freeTierDailyRequests != null).map((m) => ({
+          id: m.id,
+          limit: m.freeTierDailyRequests!,
+          used: entries.filter(
+            (e) => e.model === m.id && new Date(e.at).getTime() >= midnight.getTime(),
+          ).length,
+        })),
+      );
     });
     return () => {
       alive = false;
@@ -103,6 +127,28 @@ export default function UsagePanel({
 
   const records = scope === "chat" ? project.usage : allRecords;
   const { total, byModel, byStep } = useMemo(() => aggregate(records), [records]);
+
+  // Per-project rows for the "All Fable" scope (live project replaces its
+  // stored row, same as allRecords above). Names join against the store.
+  const byProject = useMemo(() => {
+    if (scope !== "all") return [];
+    const merged = [
+      ...stored.filter((r) => r.projectId !== project.id),
+      { projectId: project.id, usage: project.usage },
+    ];
+    return merged
+      .map((r) => ({
+        id: r.projectId,
+        name:
+          r.projectId === project.id
+            ? project.name
+            : (projectNames.get(r.projectId) ?? r.projectId.slice(0, 8)),
+        calls: r.usage.length,
+        cost: r.usage.reduce((s, u) => s + u.estCostUSD, 0),
+      }))
+      .filter((p) => p.calls > 0)
+      .sort((a, b) => b.cost - a.cost || b.calls - a.calls);
+  }, [scope, stored, project.id, project.name, project.usage, projectNames]);
   const projectCount =
     scope === "all"
       ? new Set([...stored.map((r) => r.projectId), project.id]).size
@@ -153,6 +199,40 @@ export default function UsagePanel({
             <Stat label="Tokens out" value={total.outputTokens.toLocaleString()} />
             <Stat label={scope === "all" ? "Projects" : "Project"} value={String(projectCount)} />
           </div>
+
+          {/* Per-project breakdown (All-Fable scope only) */}
+          {scope === "all" && (
+            <>
+              <SectionTitle>By project</SectionTitle>
+              <table className="w-full text-left text-[11px]">
+                <thead className="text-zinc-500">
+                  <tr>
+                    <th className="py-1 pr-2">Project</th>
+                    <th className="pr-2 text-right">Calls</th>
+                    <th className="text-right">Cost</th>
+                  </tr>
+                </thead>
+                <tbody className="text-zinc-300">
+                  {byProject.map((p) => (
+                    <tr key={p.id} className="border-t border-zinc-900">
+                      <td className="max-w-0 truncate py-1 pr-2" title={p.name}>
+                        {p.name}
+                      </td>
+                      <td className="pr-2 text-right">{p.calls}</td>
+                      <td className="text-right">{fmtUsd(p.cost)}</td>
+                    </tr>
+                  ))}
+                  {byProject.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-2 text-zinc-600">
+                        No usage yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </>
+          )}
 
           {/* Per-model breakdown */}
           <SectionTitle>By model</SectionTitle>
@@ -219,6 +299,34 @@ export default function UsagePanel({
               )}
             </tbody>
           </table>
+
+          {/* Gemini free-tier daily quota — global ledger, not just Fable */}
+          {geminiToday.length > 0 && (
+            <>
+              <SectionTitle>Gemini free tier (all benches, today)</SectionTitle>
+              <div className="flex flex-col gap-1">
+                {geminiToday.map((q) => {
+                  const pct = (q.used / q.limit) * 100;
+                  return (
+                    <div key={q.id} className="flex items-center justify-between text-[11px]">
+                      <span className="font-mono text-zinc-400">{q.id}</span>
+                      <span
+                        className={
+                          pct >= 100
+                            ? "text-red-400"
+                            : pct > 80
+                              ? "text-amber-300"
+                              : "text-zinc-300"
+                        }
+                      >
+                        today: {q.used}/{q.limit}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
           <p className="mt-4 text-[11px] text-zinc-500">
             Gemini runs on the free tier today, so its estimated cost is $0 (tokens still counted).{" "}
