@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { listChats, deleteChat, type GeminiChat } from "@/lib/gemini/chat-store";
 
-// Read surface for the /gemini page: a collection of every past analysis chat,
-// most-recent first, each expandable to its transcript, plus a token-usage
-// rollup across all of them (Gemini is free → pure visibility). The drawer is
-// where you *do* analysis; this is where you review it.
+// Read surface for the /gemini page (ARCHIVED): a collection of every past
+// analysis chat, most-recent first, each expandable to its transcript, plus a
+// token-usage rollup across all of them (Gemini is free → pure visibility).
+// The drawer that *ran* analyses is parked (see app/layout.tsx); this remains
+// the read-only record.
 
 function fmt(n: number): string {
   return n.toLocaleString();
@@ -112,8 +113,8 @@ export default function ChatCollection() {
   if (nonEmpty.length === 0) {
     return (
       <p className="text-sm text-zinc-600">
-        No analyses yet. Open the Gemini drawer (✦ bottom-left), compare some
-        prompts or results, and they’ll collect here.
+        No saved analyses. This surface is archived — analyses from when the
+        Gemini tooling was active would collect here.
       </p>
     );
   }

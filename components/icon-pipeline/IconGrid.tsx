@@ -47,16 +47,6 @@ function StatusIndicator({ status }: { status: GeneratedIconStatus }) {
   );
 }
 
-function downloadViaAnchor(icon: GeneratedIcon) {
-  if (!icon.imageUrl) return;
-  const a = document.createElement("a");
-  a.href = icon.imageUrl;
-  a.download = `${icon.iconName.replace(/\s+/g, "_").toLowerCase()}.png`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
 function IconCard({
   icon,
   onRegenerate,
@@ -132,10 +122,7 @@ function IconCard({
           )}
           {icon.status === "success" && icon.imageUrl && (
             <button
-              onClick={() => {
-                downloadViaAnchor(icon);
-                onDownload(icon);
-              }}
+              onClick={() => onDownload(icon)}
               className="text-xs border border-zinc-700 hover:border-emerald-500/60 text-emerald-400 px-2.5 py-1 rounded-lg transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
             >
               Download

@@ -14,6 +14,7 @@ import {
   generateCollectionImage,
   composeIndividualPrompts,
   generateIconsBatch,
+  generateOneIcon,
 } from "@/lib/icon/client-api";
 import {
   readImageFile,
@@ -202,11 +203,44 @@ export default function Home() {
     }
   }, [p, run]);
 
-  const handleRegenerate = useCallback(async () => {
-    // Single-icon regeneration is a bench affordance; the main page regenerates
-    // the whole set for simplicity.
-    await handleGenerateIcons();
-  }, [handleGenerateIcons]);
+  // True single-icon regeneration: re-run only the clicked icon against the
+  // collection image and replace it in place (never the whole batch).
+  const handleRegenerate = useCallback(
+    async (iconId: string) => {
+      const existing = run.generatedIcons.find((g) => g.id === iconId);
+      const iconPrompt = run.individualPrompts?.iconPrompts.find(
+        (ip) => ip.iconId === existing?.iconId,
+      );
+      if (
+        !existing ||
+        !iconPrompt ||
+        !run.individualPrompts ||
+        !run.collectionImage?.imageUrl
+      )
+        return;
+
+      p.updateGeneratedIcon(iconId, { status: "generating", error: undefined });
+      try {
+        const { generatedIcon } = await generateOneIcon({
+          collectionImageBase64: run.collectionImage.imageUrl,
+          sharedStylePrompt: run.individualPrompts.sharedStylePrompt,
+          iconPrompt,
+        });
+        // Keep the grid slot's id stable; take everything else from the result.
+        const replacement = { ...generatedIcon, id: iconId };
+        p.updateGeneratedIcon(iconId, replacement);
+        if (replacement.status === "success" && replacement.imageUrl) {
+          persist("saveIcon", () => saveIcon(replacement, run.id));
+        }
+      } catch (e) {
+        p.updateGeneratedIcon(iconId, {
+          status: "failed",
+          error: e instanceof Error ? e.message : "Regeneration failed.",
+        });
+      }
+    },
+    [p, run],
+  );
 
   // ---- Export ----
   const handleDownload = useCallback((icon: GeneratedIcon) => {

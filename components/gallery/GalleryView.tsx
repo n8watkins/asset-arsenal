@@ -15,8 +15,11 @@ export interface GalleryImage {
   id: string;
   /** Drives behaviour (drag, data-url fetch, delete): a source vs an icon record. */
   kind: "source" | "icon";
-  /** Drives the badge + which group it shows in: user-uploaded vs AI-generated. */
-  origin: "uploaded" | "ai";
+  /**
+   * Drives the badge: user-uploaded, AI-generated, or AI-elevated (a source
+   * upgraded by Bench S — it groups with sources but is machine-made).
+   */
+  origin: "uploaded" | "ai" | "elevated";
   objectUrl: string;
   fileName: string;
   getDataUrl: () => Promise<string | undefined>;
@@ -59,19 +62,45 @@ function TrashIcon() {
 }
 
 // ---------------------------------------------------------------------------
+// Download filename helpers
+// ---------------------------------------------------------------------------
+
+/** Split "shot.png" → { base: "shot", ext: "png" }; no extension → ext "". */
+function splitExt(fileName: string): { base: string; ext: string } {
+  const m = /^(.*)\.([a-z0-9]+)$/i.exec(fileName);
+  return m ? { base: m[1], ext: m[2].toLowerCase() } : { base: fileName, ext: "" };
+}
+
+/** Best-effort extension from a data URL's mime type ("" if unknown). */
+function extFromDataUrl(dataUrl: string): string {
+  const m = /^data:image\/([a-z0-9.+-]+)/i.exec(dataUrl);
+  if (!m) return "";
+  const sub = m[1].toLowerCase();
+  if (sub === "jpeg") return "jpg";
+  if (sub === "svg+xml") return "svg";
+  return sub;
+}
+
+// ---------------------------------------------------------------------------
 // Tile
 // ---------------------------------------------------------------------------
 
-function OriginBadge({ origin }: { origin: "uploaded" | "ai" }) {
+function OriginBadge({ origin }: { origin: GalleryImage["origin"] }) {
   const isUploaded = origin === "uploaded";
   const classes = isUploaded
     ? "bg-cyan-600/20 text-cyan-300 border-cyan-500/40"
     : "bg-violet-600/20 text-violet-300 border-violet-500/40";
+  const label =
+    origin === "uploaded"
+      ? "Uploaded"
+      : origin === "elevated"
+        ? "AI-elevated"
+        : "AI-generated";
   return (
     <span
       className={`text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded border ${classes}`}
     >
-      {isUploaded ? "Uploaded" : "AI-generated"}
+      {label}
     </span>
   );
 }
@@ -127,9 +156,13 @@ function GalleryTile({
     setBusy("download");
     try {
       const dataUrl = (await image.getDataUrl()) ?? image.objectUrl;
-      const ext = image.kind === "icon" ? "png" : "";
-      const base = slugify(image.fileName);
-      downloadDataUrl(dataUrl, ext ? `${base}.${ext}` : base || "image");
+      // Slugify the name without its extension, then re-attach a real
+      // extension (original name first, then the blob's mime type).
+      const { base: rawBase, ext: nameExt } = splitExt(image.fileName);
+      const ext =
+        image.kind === "icon" ? "png" : nameExt || extFromDataUrl(dataUrl);
+      const base = slugify(rawBase) || "image";
+      downloadDataUrl(dataUrl, ext ? `${base}.${ext}` : base);
     } finally {
       setBusy(null);
     }
@@ -309,7 +342,9 @@ export default function GalleryView({
         .map((s) => ({
           id: s.id,
           kind: "source" as const,
-          origin: "uploaded" as const,
+          // Bench S saves AI-elevated sources with category "elevated"; they
+          // group with sources but are badged as machine-made.
+          origin: s.category === "elevated" ? ("elevated" as const) : ("uploaded" as const),
           objectUrl: s.objectUrl,
           fileName: s.fileName ?? "Untitled",
           getDataUrl: () => getSourceAsDataUrl(s.id),

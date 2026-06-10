@@ -87,12 +87,16 @@ async function tracked<T>(
 
   try {
     const res = await run();
+    const result = summarize?.(res);
 
     let realizedCost: number | null;
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     if (args.kind === "image") {
-      realizedCost = imageCostUSD(model, quality ?? "medium", count);
+      // Batch routes return 200 with per-icon failures inside; bill realized
+      // cost on the images actually produced, not the requested count.
+      const succeeded = result?.kind === "image" ? result.count : count;
+      realizedCost = imageCostUSD(model, quality ?? "medium", succeeded);
     } else {
       const usage = (res as { usage?: TokenUsage }).usage;
       if (usage) {
@@ -115,7 +119,9 @@ async function tracked<T>(
       inputTokens,
       outputTokens,
       ok: true,
-      result: summarize?.(res),
+      result,
+      bench: "pipeline",
+      provider: "openai",
     });
     return res;
   } catch (err) {
@@ -129,6 +135,8 @@ async function tracked<T>(
       realizedCost: null,
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+      bench: "pipeline",
+      provider: "openai",
     });
     throw err;
   }

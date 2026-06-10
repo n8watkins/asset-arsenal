@@ -3,9 +3,9 @@ import ChatCollection from "@/components/gemini-chat/ChatCollection";
 
 export const metadata = { title: "Gemini Analysis · Asset Arsenal" };
 
-// A collection of every past Gemini analysis (the chats run from the drawer),
-// with transcripts and a token-usage rollup. The drawer is where you run
-// analysis; this page is the record of it.
+// ARCHIVED surface: the Gemini analysis drawer is parked (intentionally not
+// mounted — see app/layout.tsx). This page remains as the read-only record of
+// every past analysis, with transcripts and a token-usage rollup.
 
 export default function GeminiPage() {
   return (
@@ -16,9 +16,9 @@ export default function GeminiPage() {
           <div className="flex flex-col gap-2">
             <h1 className="text-3xl font-bold">Gemini Analysis</h1>
             <p className="text-sm text-zinc-400">
-              Every analysis you’ve run in the Gemini drawer, collected here —
-              expand any to see the transcript. To run a new one, open the drawer
-              (✦ bottom-left) or hit “Send to Gemini” on an experiment’s results.
+              This surface is archived — the Gemini analysis tooling is parked
+              for now. Your saved analyses below remain readable; expand any to
+              see its transcript.
             </p>
           </div>
           <ChatCollection />
