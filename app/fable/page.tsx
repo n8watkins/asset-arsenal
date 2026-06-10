@@ -23,6 +23,8 @@ import type { ComposerHandle } from "@/components/fable/Composer";
 import Composer from "@/components/fable/Composer";
 import DevDrawer from "@/components/fable/DevDrawer";
 import Hero from "@/components/fable/Hero";
+import ModelSettings from "@/components/fable/ModelSettings";
+import ProjectView from "@/components/fable/ProjectView";
 import Sidebar from "@/components/fable/Sidebar";
 import UsagePanel from "@/components/fable/UsagePanel";
 import { fmtUsd, STAGE_LABELS, STAGE_QUICK_ACTIONS } from "@/components/fable/ui";
@@ -36,6 +38,9 @@ export default function FablePage() {
   const [usageOpen, setUsageOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // "Chat | Project" surface toggle (header); Project shows every asset in a
+  // grid with the composer hidden — a clean asset view, not a second chat.
+  const [view, setView] = useState<"chat" | "project">("chat");
 
   // The active composer (hero OR docked) — a page-level drop routes its file here.
   const composerRef = useRef<ComposerHandle>(null);
@@ -89,10 +94,12 @@ export default function FablePage() {
           onNew={() => {
             fable.newProject();
             setSidebarOpen(false);
+            setView("chat");
           }}
           onOpen={(p) => {
             fable.openProject(p);
             setSidebarOpen(false);
+            setView("chat");
           }}
         />
 
@@ -138,6 +145,27 @@ export default function FablePage() {
             )}
 
             <div className="ml-auto flex items-center gap-2.5">
+              {/* Chat | Project surface toggle — only once a conversation exists. */}
+              {inConversation && (
+                <div className="flex items-center rounded-full border border-zinc-800 bg-zinc-900/50 p-0.5 text-[11px]">
+                  <button
+                    onClick={() => setView("chat")}
+                    className={`rounded-full px-2.5 py-1 ${
+                      view === "chat" ? "bg-cyan-500/20 text-cyan-200" : "text-zinc-500"
+                    }`}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    onClick={() => setView("project")}
+                    className={`rounded-full px-2.5 py-1 ${
+                      view === "project" ? "bg-cyan-500/20 text-cyan-200" : "text-zinc-500"
+                    }`}
+                  >
+                    Project
+                  </button>
+                </div>
+              )}
               <span className="hidden rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] text-zinc-400 ring-1 ring-zinc-800 sm:inline">
                 {STAGE_LABELS[project.stage]}
               </span>
@@ -168,6 +196,8 @@ export default function FablePage() {
                   Dev
                 </button>
               </div>
+              {/* ⚙ model + settings popover — visible in BOTH modes. */}
+              <ModelSettings models={project.models} onModelConfig={fable.setModelConfig} />
             </div>
           </header>
 
@@ -185,6 +215,33 @@ export default function FablePage() {
                 dragging={dragging}
                 onSend={fable.sendMessage}
               />
+            </>
+          ) : view === "project" ? (
+            <>
+              {/* Project asset view — composer hidden for a clean asset surface. */}
+              <div className="flex min-h-0 flex-1 flex-col">
+                {fable.error && (
+                  <div className="mx-auto mt-3 w-full max-w-3xl shrink-0 px-4">
+                    <ErrorBanner message={fable.error} onDismiss={fable.clearError} />
+                  </div>
+                )}
+                <div className="min-h-0 flex-1">
+                  <ProjectView project={project} />
+                </div>
+              </div>
+
+              {fable.devMode && (
+                <DevDrawer
+                  project={project}
+                  open={drawerOpen}
+                  lastRawError={fable.lastRawError}
+                  /* TODO(integration): pass fable.rawLog once the hook exposes it */
+                  onToggle={() => setDrawerOpen((o) => !o)}
+                  onRunAnalyze={() => fable.runAnalyze()}
+                  onRunPreviews={fable.runPreviews}
+                  onGenerateFinals={fable.approveAndGenerateFinals}
+                />
+              )}
             </>
           ) : (
             <>
@@ -233,11 +290,11 @@ export default function FablePage() {
                   project={project}
                   open={drawerOpen}
                   lastRawError={fable.lastRawError}
+                  /* TODO(integration): pass fable.rawLog once the hook exposes it */
                   onToggle={() => setDrawerOpen((o) => !o)}
                   onRunAnalyze={() => fable.runAnalyze()}
                   onRunPreviews={fable.runPreviews}
                   onGenerateFinals={fable.approveAndGenerateFinals}
-                  onModelConfig={fable.setModelConfig}
                 />
               )}
             </>

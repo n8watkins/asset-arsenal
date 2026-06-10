@@ -1,39 +1,60 @@
 "use client";
 
-// Fable Bench — Dev Mode bottom drawer. Tabs: Usage / Prompts / Raw JSON /
-// Pipeline. Hidden entirely in Live Mode (the page never renders it).
+// Fable Bench — Dev Mode bottom drawer. Tabs: Usage / Prompts / Raw I/O /
+// Raw JSON / Pipeline. Hidden entirely in Live Mode (the page never renders it).
 //
 // Usage rows expand on click (full record incl. durationMs + promptPreview);
-// the Raw tab also shows the most recent raw error payload a route returned;
-// the Pipeline tab carries the model + quality pickers.
+// the Raw I/O tab renders the per-request ring buffer (newest first, expandable
+// request/response JSON); the Raw tab shows the most recent raw error payload a
+// route returned plus the scrubbed project; the Pipeline tab carries the manual
+// triggers. Model/quality pickers moved to the header ⚙ ModelSettings popover.
 
 import { Fragment, useState } from "react";
 import { totalCostUSD } from "@/lib/fable/pricing";
-import { CATALOG } from "@/lib/icon/model-reference";
 import type { FableLastRawError } from "@/lib/fable/use-fable";
-import type { FableModelConfig, FableProject, ImageQuality } from "@/lib/fable/types";
+import type { FableProject } from "@/lib/fable/types";
 import { fmtTime, fmtUsd, GhostButton, Pill } from "./ui";
 
-type Tab = "usage" | "prompts" | "raw" | "pipeline";
+/** Structurally identical to FableRawLogEntry in lib/fable/types.ts (the hook
+ *  side lands in a parallel workstream — keeping a local type avoids importing
+ *  something that may not exist yet; reconcile at integration). */
+type LocalRawLogEntry = {
+  at: string;
+  step: string;
+  request?: unknown;
+  response?: unknown;
+};
+
+type Tab = "usage" | "prompts" | "io" | "raw" | "pipeline";
+
+const TAB_LABELS: Record<Tab, string> = {
+  usage: "Usage",
+  prompts: "Prompts",
+  io: "Raw I/O",
+  raw: "Raw",
+  pipeline: "Pipeline",
+};
 
 export default function DevDrawer({
   project,
   open,
   lastRawError,
+  rawLog,
   onToggle,
   onRunAnalyze,
   onRunPreviews,
   onGenerateFinals,
-  onModelConfig,
 }: {
   project: FableProject;
   open: boolean;
   lastRawError: FableLastRawError | null;
+  /** Hook-exposed ring buffer of raw request/response pairs (optional until
+   *  the use-fable side lands). */
+  rawLog?: LocalRawLogEntry[];
   onToggle: () => void;
   onRunAnalyze: () => void;
   onRunPreviews: () => void;
   onGenerateFinals: () => void;
-  onModelConfig: (patch: Partial<FableModelConfig>) => void;
 }) {
   const [tab, setTab] = useState<Tab>("usage");
 
@@ -53,23 +74,24 @@ export default function DevDrawer({
       {open && (
         <div className="max-h-72 overflow-hidden">
           <div className="flex gap-1 border-b border-zinc-800 px-3">
-            {(["usage", "prompts", "raw", "pipeline"] as Tab[]).map((t) => (
+            {(["usage", "prompts", "io", "raw", "pipeline"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-3 py-1.5 text-xs capitalize ${
+                className={`px-3 py-1.5 text-xs ${
                   tab === t
                     ? "border-b-2 border-cyan-500 text-cyan-300"
                     : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
-                {t}
+                {TAB_LABELS[t]}
               </button>
             ))}
           </div>
           <div className="max-h-60 overflow-auto p-3 text-xs">
             {tab === "usage" && <UsageTab project={project} />}
             {tab === "prompts" && <PromptsTab project={project} />}
+            {tab === "io" && <RawIOTab rawLog={rawLog} />}
             {tab === "raw" && <RawTab project={project} lastRawError={lastRawError} />}
             {tab === "pipeline" && (
               <PipelineTab
@@ -77,7 +99,6 @@ export default function DevDrawer({
                 onRunAnalyze={onRunAnalyze}
                 onRunPreviews={onRunPreviews}
                 onGenerateFinals={onGenerateFinals}
-                onModelConfig={onModelConfig}
               />
             )}
           </div>
@@ -236,28 +257,76 @@ function RawTab({
   );
 }
 
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? "undefined";
+  } catch {
+    return "(unserializable — circular reference?)";
+  }
+}
+
+function RawIOTab({ rawLog }: { rawLog?: LocalRawLogEntry[] }) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const rows = rawLog ? [...rawLog].reverse() : [];
+
+  if (rows.length === 0) {
+    return (
+      <p className="text-zinc-600">
+        No raw traffic captured yet — make a request with Dev mode on.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {rows.map((entry, i) => (
+        <div key={`${entry.at}-${i}`} className="rounded-lg border border-zinc-800 bg-zinc-900/40">
+          <button
+            onClick={() => setExpanded((e) => (e === i ? null : i))}
+            className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] text-zinc-300 hover:text-zinc-100"
+          >
+            <span className="font-mono text-violet-400">{expanded === i ? "▾" : "▸"}</span>
+            <span className="text-zinc-500">[{fmtTime(entry.at)}]</span>
+            <span className="font-mono">{entry.step}</span>
+          </button>
+          {expanded === i && (
+            <div className="grid grid-cols-1 gap-2 border-t border-zinc-800 p-2 md:grid-cols-2">
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">
+                  Request
+                </p>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-950/60 p-2 text-[10px] text-zinc-400">
+                  {entry.request !== undefined ? safeStringify(entry.request) : "(none)"}
+                </pre>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">
+                  Response
+                </p>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-950/60 p-2 text-[10px] text-zinc-400">
+                  {entry.response !== undefined ? safeStringify(entry.response) : "(none)"}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PipelineTab({
   project,
   onRunAnalyze,
   onRunPreviews,
   onGenerateFinals,
-  onModelConfig,
 }: {
   project: FableProject;
   onRunAnalyze: () => void;
   onRunPreviews: () => void;
   onGenerateFinals: () => void;
-  onModelConfig: (patch: Partial<FableModelConfig>) => void;
 }) {
   const lastDecision = [...project.events].reverse().find((e) => e.kind === "decision");
-  const { models } = project;
-
-  const analysisModels = CATALOG.filter((m) => m.kind === "text" && m.provider === "Google");
-  const imageModels = CATALOG.filter((m) => m.kind === "image");
-  const selectedImage = imageModels.find((m) => m.id === models.image);
-
-  const selectCls =
-    "rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 focus:border-cyan-500/60 focus:outline-none";
 
   return (
     <div className="flex flex-col gap-3">
@@ -272,62 +341,9 @@ function PipelineTab({
         )}
       </div>
 
-      {/* Model + quality selection — per project, threaded through every call. */}
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
-          Analysis model
-          <select
-            value={models.analysis}
-            onChange={(e) => onModelConfig({ analysis: e.target.value })}
-            className={selectCls}
-          >
-            {analysisModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-                {m.freeTier ? " (free tier)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
-          Image model
-          <select
-            value={models.image}
-            onChange={(e) => onModelConfig({ image: e.target.value })}
-            className={selectCls}
-          >
-            {imageModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-                {m.status === "deprecated" && m.deprecation
-                  ? ` (deprecated — shutdown ${m.deprecation.shutdown})`
-                  : ""}
-                {!m.capabilities.includes("transparentBg") ? " — no transparent bg" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
-          Quality
-          <select
-            value={models.quality}
-            onChange={(e) => onModelConfig({ quality: e.target.value as ImageQuality })}
-            className={selectCls}
-          >
-            {(["low", "medium", "high"] as const).map((q) => (
-              <option key={q} value={q}>
-                {q}
-              </option>
-            ))}
-          </select>
-        </label>
-        {selectedImage && !selectedImage.capabilities.includes("transparentBg") && (
-          <p className="basis-full text-[10px] text-amber-400">
-            ⚠ {selectedImage.id} can&apos;t render transparent backgrounds — final icons will
-            come back opaque.
-          </p>
-        )}
-      </div>
+      <p className="text-[10px] text-zinc-600">
+        Model + quality pickers moved to the header ⚙ settings popover.
+      </p>
 
       <div className="flex flex-wrap gap-2">
         <GhostButton className="px-3 py-1.5 text-xs" onClick={onRunAnalyze}>
