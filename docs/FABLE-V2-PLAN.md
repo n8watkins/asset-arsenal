@@ -1,5 +1,11 @@
 # Fable Bench V2 — Implementation Plan
 
+> **STATUS (2026-06-10): IMPLEMENTED — all 29 items.** Phase 1: `60a5a08` (A),
+> `75592ff` (E), `9fa795f` (C). Phase 2: `a81bc65` (D), `e9d24dc` (B). Dev-mode
+> follow-ups `90c4268`; Blob storage migration (beyond this plan's scope)
+> `0bd38d1`. Open: Gemini RPD constants (E28 TODO), chat-vs-project split,
+> consolidation 3–7. See [`HANDOFF.md`](./HANDOFF.md) for current state.
+
 Scope: **Fable only** (`lib/fable/**`, `components/fable/**`, `app/fable/**`,
 `app/api/fable/**`) plus the global `/usage` page and **additive-only** touches
 to shared gallery storage. The other benches must not change behavior.
