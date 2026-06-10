@@ -23,12 +23,30 @@
 // Models + limits
 // ---------------------------------------------------------------------------
 
+// Default model ids. These are CATALOG ids (lib/icon/model-reference.ts) — the
+// catalog is the single source of truth for pricing/capabilities/deprecation;
+// keep these in sync with it rather than inventing new literals.
 export const FABLE_MODELS = {
   /** All routing, analysis, structured JSON, prompt writing. Free-tier Gemini. */
   analysis: "gemini-3.1-flash-lite",
   /** All image generation (improved source, preview sheets, final icons). */
   image: "gpt-image-1-mini",
 } as const;
+
+export type ImageQuality = "low" | "medium" | "high";
+
+/** Per-project model + quality selection (DevDrawer → Pipeline tab). */
+export type FableModelConfig = {
+  analysis: string; //  Gemini text model (catalog id)
+  image: string; //     image model (catalog id)
+  quality: ImageQuality;
+};
+
+export const DEFAULT_FABLE_MODEL_CONFIG: FableModelConfig = {
+  analysis: FABLE_MODELS.analysis,
+  image: FABLE_MODELS.image,
+  quality: "medium",
+};
 
 export const FABLE_LIMITS = {
   /** Icons per preview sheet by default (3×3). */
@@ -40,8 +58,6 @@ export const FABLE_LIMITS = {
   /** Parallel final-icon generations. */
   finalConcurrency: 3,
 } as const;
-
-export type ImageQuality = "low" | "medium" | "high";
 
 // ---------------------------------------------------------------------------
 // Stages — where the project is in the flow
@@ -103,6 +119,9 @@ export type FableDecision = {
   reason: string; //      one tight sentence — shown in Dev Mode
   assistantReply: string; // short user-facing message — shown in the chat
   ops: FableOp[]; //      only populated for revise_icons / revise_source
+  /** Short (≤5 word) chat title the agent proposes once it grasps the goal.
+   *  Applied only while the project is still "Untitled project". */
+  suggestedTitle?: string | null;
 };
 
 // Compact project summary sent WITH each agent call so routing is state-aware.
@@ -117,6 +136,9 @@ export type FableStateSummary = {
   sheetCount: number;
   sheetApproved: boolean;
   finalsCount: number;
+  /** A NEW image arrived with THIS message while a source already exists —
+   *  source-replacing intents should act on the new image. */
+  newImageThisTurn: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -190,7 +212,6 @@ export type FableStepKey =
   | "improve_source_image" // OpenAI: render upgraded source
   | "analyze" //              Gemini: style + icon candidates
   | "revise_prompts" //       Gemini: apply ops to candidates
-  | "preview_prompt" //       Gemini: compose the sheet prompt
   | "preview_image" //        OpenAI: render preview sheet
   | "final_icon"; //          OpenAI: render one standalone icon
 
@@ -255,6 +276,9 @@ export type FableProject = {
   sheets: PreviewSheet[];
   finals: FableFinalIcon[];
 
+  /** Per-project model + quality selection (defaults to FABLE_MODELS, medium). */
+  models: FableModelConfig;
+
   usage: FableUsageRecord[];
   events: FableEvent[];
 };
@@ -283,6 +307,7 @@ export function summarizeProject(p: FableProject): FableStateSummary {
     sheetCount: p.sheets.filter((s) => s.status !== "superseded").length,
     sheetApproved: p.sheets.some((s) => s.status === "approved"),
     finalsCount: p.finals.filter((f) => f.status === "success").length,
+    newImageThisTurn: false, // callers override when an image rode this turn
   };
 }
 
@@ -317,6 +342,8 @@ export type AgentRequest = {
   /** Data URL or bare base64; null when no NEW image was attached this turn. */
   imageBase64: string | null;
   state: FableStateSummary;
+  /** Analysis model override (catalog id); defaults to FABLE_MODELS.analysis. */
+  model?: string;
 };
 export type AgentResponse = {
   decision: FableDecision;
@@ -327,6 +354,8 @@ export type AgentResponse = {
 export type ImproveSourceRequest = {
   imageBase64: string; //  the original (or current) source
   instruction: string; //  user's ask, e.g. "make this look better" or a revision
+  model?: string; //       analysis model for the brief (catalog id)
+  imageModel?: string; //  image model for the render (catalog id)
   quality?: ImageQuality;
 };
 export type ImproveSourceResponse = {
@@ -341,6 +370,7 @@ export type AnalyzeStyleRequest = {
   imageBase64: string; // the approved source
   guidance?: string; //   optional user steer, e.g. "more dark-mode SaaS"
   maxIcons?: number; //   defaults to FABLE_LIMITS.maxCandidates
+  model?: string; //      analysis model override (catalog id)
 };
 export type AnalyzeStyleResponse = {
   style: FableStyle;
@@ -355,6 +385,7 @@ export type RevisePromptsRequest = {
   sharedStylePrompt: string;
   candidates: IconCandidate[];
   ops: FableOp[];
+  model?: string; // analysis model override (catalog id)
 };
 export type RevisePromptsResponse = {
   /** Full updated candidate list (removed ones get status:"removed"; added ones
@@ -372,6 +403,7 @@ export type PreviewSheetRequest = {
   icons: { id: string; name: string; concept: string; prompt: string }[];
   sheetIndex: number;
   instruction?: string; // for "try another sheet" variants
+  imageModel?: string; // image model override (catalog id)
   quality?: ImageQuality;
 };
 export type PreviewSheetResponse = {
@@ -390,6 +422,7 @@ export type FinalIconRequest = {
    *  3×3 grid" — lets the model REPRODUCE that exact rendering instead of
    *  redrawing from text (which drifts in color/weight). */
   sheetPosition?: string;
+  imageModel?: string; // image model override (catalog id)
   quality?: ImageQuality;
 };
 export type FinalIconResponse = {
@@ -397,4 +430,10 @@ export type FinalIconResponse = {
   usage: FableUsageRecord[];
 };
 
-export type FableApiError = { error: string };
+// Error payload every route may return: message + any usage accumulated before
+// the failure + the serialized raw provider error (surfaced in the Dev drawer).
+export type FableApiError = {
+  error: string;
+  usage?: FableUsageRecord[];
+  raw?: unknown;
+};

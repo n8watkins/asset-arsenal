@@ -24,6 +24,7 @@ import Composer from "@/components/fable/Composer";
 import DevDrawer from "@/components/fable/DevDrawer";
 import Hero from "@/components/fable/Hero";
 import Sidebar from "@/components/fable/Sidebar";
+import UsagePanel from "@/components/fable/UsagePanel";
 import { fmtUsd, STAGE_LABELS, STAGE_QUICK_ACTIONS } from "@/components/fable/ui";
 
 export default function FablePage() {
@@ -32,6 +33,7 @@ export default function FablePage() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [dragging, setDragging] = useState(false);
 
@@ -82,7 +84,7 @@ export default function FablePage() {
         <Sidebar
           open={sidebarOpen}
           currentId={project.id}
-          refreshKey={project.events.length}
+          refreshKey={project.updatedAt}
           onClose={() => setSidebarOpen(false)}
           onNew={() => {
             fable.newProject();
@@ -139,11 +141,15 @@ export default function FablePage() {
               <span className="hidden rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] text-zinc-400 ring-1 ring-zinc-800 sm:inline">
                 {STAGE_LABELS[project.stage]}
               </span>
-              <div className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1 text-[11px]">
+              <button
+                onClick={() => setUsageOpen(true)}
+                className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1 text-[11px] transition-colors hover:border-cyan-500/50"
+                title="Open usage panel"
+              >
                 <span className="text-emerald-300">{fmtUsd(openaiCost)}</span>
                 <span className="text-zinc-600">·</span>
                 <span className="text-violet-300">{geminiCalls} gemini</span>
-              </div>
+              </button>
               <div className="flex items-center rounded-full border border-zinc-800 bg-zinc-900/50 p-0.5 text-[11px]">
                 <button
                   onClick={() => fable.setDevMode(false)}
@@ -167,12 +173,19 @@ export default function FablePage() {
 
           {/* Surface: hero OR conversation */}
           {!inConversation ? (
-            <Hero
-              ref={composerRef}
-              busy={working}
-              dragging={dragging}
-              onSend={fable.sendMessage}
-            />
+            <>
+              {fable.error && (
+                <div className="mx-auto mt-3 w-full max-w-2xl px-4">
+                  <ErrorBanner message={fable.error} onDismiss={fable.clearError} />
+                </div>
+              )}
+              <Hero
+                ref={composerRef}
+                busy={working}
+                dragging={dragging}
+                onSend={fable.sendMessage}
+              />
+            </>
           ) : (
             <>
               <ChatFeed fable={fable} busy={busy} pendingDecision={fable.pendingDecision} />
@@ -180,6 +193,11 @@ export default function FablePage() {
               {/* Docked composer + contextual quick-actions */}
               <div className="border-t border-zinc-800 bg-zinc-950/80 backdrop-blur">
                 <div className="mx-auto w-full max-w-3xl px-4 py-3">
+                  {fable.error && (
+                    <div className="mb-2">
+                      <ErrorBanner message={fable.error} onDismiss={fable.clearError} />
+                    </div>
+                  )}
                   {quick.length > 0 && (
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       {quick.map((q) => (
@@ -212,16 +230,37 @@ export default function FablePage() {
                 <DevDrawer
                   project={project}
                   open={drawerOpen}
+                  lastRawError={fable.lastRawError}
                   onToggle={() => setDrawerOpen((o) => !o)}
                   onRunAnalyze={() => fable.runAnalyze()}
                   onRunPreviews={fable.runPreviews}
                   onGenerateFinals={fable.approveAndGenerateFinals}
+                  onModelConfig={fable.setModelConfig}
                 />
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* Usage panel — opened from the header cost pill, live AND dev modes. */}
+      {usageOpen && <UsagePanel project={project} onClose={() => setUsageOpen(false)} />}
+    </div>
+  );
+}
+
+function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-red-800/50 bg-red-950/40 px-3 py-2 text-sm text-red-200">
+      <span className="mt-0.5 shrink-0">⚠️</span>
+      <p className="min-w-0 flex-1 break-words">{message}</p>
+      <button
+        onClick={onDismiss}
+        className="shrink-0 rounded-md px-1.5 text-red-300/70 transition-colors hover:bg-red-900/40 hover:text-red-100"
+        aria-label="Dismiss error"
+      >
+        ✕
+      </button>
     </div>
   );
 }

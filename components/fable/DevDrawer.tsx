@@ -2,10 +2,16 @@
 
 // Fable Bench — Dev Mode bottom drawer. Tabs: Usage / Prompts / Raw JSON /
 // Pipeline. Hidden entirely in Live Mode (the page never renders it).
+//
+// Usage rows expand on click (full record incl. durationMs + promptPreview);
+// the Raw tab also shows the most recent raw error payload a route returned;
+// the Pipeline tab carries the model + quality pickers.
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { totalCostUSD } from "@/lib/fable/pricing";
-import type { FableProject } from "@/lib/fable/types";
+import { CATALOG } from "@/lib/icon/model-reference";
+import type { FableLastRawError } from "@/lib/fable/use-fable";
+import type { FableModelConfig, FableProject, ImageQuality } from "@/lib/fable/types";
 import { fmtTime, fmtUsd, GhostButton, Pill } from "./ui";
 
 type Tab = "usage" | "prompts" | "raw" | "pipeline";
@@ -13,17 +19,21 @@ type Tab = "usage" | "prompts" | "raw" | "pipeline";
 export default function DevDrawer({
   project,
   open,
+  lastRawError,
   onToggle,
   onRunAnalyze,
   onRunPreviews,
   onGenerateFinals,
+  onModelConfig,
 }: {
   project: FableProject;
   open: boolean;
+  lastRawError: FableLastRawError | null;
   onToggle: () => void;
   onRunAnalyze: () => void;
   onRunPreviews: () => void;
   onGenerateFinals: () => void;
+  onModelConfig: (patch: Partial<FableModelConfig>) => void;
 }) {
   const [tab, setTab] = useState<Tab>("usage");
 
@@ -60,13 +70,14 @@ export default function DevDrawer({
           <div className="max-h-60 overflow-auto p-3 text-xs">
             {tab === "usage" && <UsageTab project={project} />}
             {tab === "prompts" && <PromptsTab project={project} />}
-            {tab === "raw" && <RawTab project={project} />}
+            {tab === "raw" && <RawTab project={project} lastRawError={lastRawError} />}
             {tab === "pipeline" && (
               <PipelineTab
                 project={project}
                 onRunAnalyze={onRunAnalyze}
                 onRunPreviews={onRunPreviews}
                 onGenerateFinals={onGenerateFinals}
+                onModelConfig={onModelConfig}
               />
             )}
           </div>
@@ -79,6 +90,7 @@ export default function DevDrawer({
 function UsageTab({ project }: { project: FableProject }) {
   const rows = [...project.usage].reverse();
   const totalOpenai = totalCostUSD(project.usage, "openai");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   return (
     <table className="w-full text-left text-[11px]">
       <thead className="text-zinc-500">
@@ -94,25 +106,40 @@ function UsageTab({ project }: { project: FableProject }) {
       </thead>
       <tbody className="text-zinc-300">
         {rows.map((u) => (
-          <tr key={u.id} className="border-t border-zinc-900">
-            <td className="py-1 pr-2 text-zinc-500">{fmtTime(u.at)}</td>
-            <td className="pr-2">
-              <Pill tone={u.provider === "openai" ? "emerald" : "violet"}>{u.provider}</Pill>
-            </td>
-            <td className="pr-2 font-mono text-zinc-400">{u.model}</td>
-            <td className="pr-2 font-mono text-zinc-500">{u.step}</td>
-            <td className="pr-2 text-zinc-400">
-              {u.kind === "image"
-                ? `${u.imageCount ?? 1} img`
-                : `${u.inputTokens ?? 0}/${u.outputTokens ?? 0}`}
-            </td>
-            <td className="pr-2">{fmtUsd(u.estCostUSD)}</td>
-            <td>
-              <span className={u.ok ? "text-emerald-400" : "text-red-400"}>
-                {u.ok ? "ok" : "error"}
-              </span>
-            </td>
-          </tr>
+          <Fragment key={u.id}>
+            <tr
+              className="cursor-pointer border-t border-zinc-900 hover:bg-zinc-900/40"
+              onClick={() => setExpandedId((id) => (id === u.id ? null : u.id))}
+              title="Click for full record"
+            >
+              <td className="py-1 pr-2 text-zinc-500">{fmtTime(u.at)}</td>
+              <td className="pr-2">
+                <Pill tone={u.provider === "openai" ? "emerald" : "violet"}>{u.provider}</Pill>
+              </td>
+              <td className="pr-2 font-mono text-zinc-400">{u.model}</td>
+              <td className="pr-2 font-mono text-zinc-500">{u.step}</td>
+              <td className="pr-2 text-zinc-400">
+                {u.kind === "image"
+                  ? `${u.imageCount ?? 1} img`
+                  : `${u.inputTokens ?? 0}/${u.outputTokens ?? 0}`}
+              </td>
+              <td className="pr-2">{fmtUsd(u.estCostUSD)}</td>
+              <td>
+                <span className={u.ok ? "text-emerald-400" : "text-red-400"}>
+                  {u.ok ? "ok" : "error"}
+                </span>
+              </td>
+            </tr>
+            {expandedId === u.id && (
+              <tr className="bg-zinc-900/30">
+                <td colSpan={7} className="px-2 py-2">
+                  <pre className="whitespace-pre-wrap break-all text-[10px] text-zinc-400">
+                    {JSON.stringify(u, null, 2)}
+                  </pre>
+                </td>
+              </tr>
+            )}
+          </Fragment>
         ))}
         {rows.length === 0 && (
           <tr>
@@ -183,11 +210,29 @@ function stripImages(project: FableProject): unknown {
   return clone;
 }
 
-function RawTab({ project }: { project: FableProject }) {
+function RawTab({
+  project,
+  lastRawError,
+}: {
+  project: FableProject;
+  lastRawError: FableLastRawError | null;
+}) {
   return (
-    <pre className="whitespace-pre-wrap break-all text-[10px] text-zinc-400">
-      {JSON.stringify(stripImages(project), null, 2)}
-    </pre>
+    <div className="flex flex-col gap-3">
+      {lastRawError && (
+        <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-2">
+          <p className="text-[10px] uppercase tracking-widest text-red-400">
+            Last raw error · {fmtTime(lastRawError.at)}
+          </p>
+          <pre className="mt-1 whitespace-pre-wrap break-all text-[10px] text-red-200/80">
+            {JSON.stringify(lastRawError.raw, null, 2)}
+          </pre>
+        </div>
+      )}
+      <pre className="whitespace-pre-wrap break-all text-[10px] text-zinc-400">
+        {JSON.stringify(stripImages(project), null, 2)}
+      </pre>
+    </div>
   );
 }
 
@@ -196,13 +241,24 @@ function PipelineTab({
   onRunAnalyze,
   onRunPreviews,
   onGenerateFinals,
+  onModelConfig,
 }: {
   project: FableProject;
   onRunAnalyze: () => void;
   onRunPreviews: () => void;
   onGenerateFinals: () => void;
+  onModelConfig: (patch: Partial<FableModelConfig>) => void;
 }) {
   const lastDecision = [...project.events].reverse().find((e) => e.kind === "decision");
+  const { models } = project;
+
+  const analysisModels = CATALOG.filter((m) => m.kind === "text" && m.provider === "Google");
+  const imageModels = CATALOG.filter((m) => m.kind === "image");
+  const selectedImage = imageModels.find((m) => m.id === models.image);
+
+  const selectCls =
+    "rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 focus:border-cyan-500/60 focus:outline-none";
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2 text-zinc-400">
@@ -215,6 +271,64 @@ function PipelineTab({
           </>
         )}
       </div>
+
+      {/* Model + quality selection — per project, threaded through every call. */}
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
+        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
+          Analysis model
+          <select
+            value={models.analysis}
+            onChange={(e) => onModelConfig({ analysis: e.target.value })}
+            className={selectCls}
+          >
+            {analysisModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}
+                {m.freeTier ? " (free tier)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
+          Image model
+          <select
+            value={models.image}
+            onChange={(e) => onModelConfig({ image: e.target.value })}
+            className={selectCls}
+          >
+            {imageModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}
+                {m.status === "deprecated" && m.deprecation
+                  ? ` (deprecated — shutdown ${m.deprecation.shutdown})`
+                  : ""}
+                {!m.capabilities.includes("transparentBg") ? " — no transparent bg" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-[10px] uppercase tracking-widest text-zinc-500">
+          Quality
+          <select
+            value={models.quality}
+            onChange={(e) => onModelConfig({ quality: e.target.value as ImageQuality })}
+            className={selectCls}
+          >
+            {(["low", "medium", "high"] as const).map((q) => (
+              <option key={q} value={q}>
+                {q}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedImage && !selectedImage.capabilities.includes("transparentBg") && (
+          <p className="basis-full text-[10px] text-amber-400">
+            ⚠ {selectedImage.id} can&apos;t render transparent backgrounds — final icons will
+            come back opaque.
+          </p>
+        )}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <GhostButton className="px-3 py-1.5 text-xs" onClick={onRunAnalyze}>
           Run analyze

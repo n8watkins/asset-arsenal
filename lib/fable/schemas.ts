@@ -8,6 +8,9 @@ import { FABLE_INTENTS, FABLE_OP_KINDS, FABLE_STAGES } from "./types";
 
 const imageBase64Field = z.string().min(1, "imageBase64 is required");
 
+// Optional model overrides — catalog ids (lib/icon/model-reference.ts).
+const modelField = z.string().min(1).optional();
+
 // POST /api/fable/agent
 export const AgentRequestSchema = z.object({
   text: z.string().min(1, "text is required"),
@@ -22,13 +25,17 @@ export const AgentRequestSchema = z.object({
     sheetCount: z.number().int().min(0),
     sheetApproved: z.boolean(),
     finalsCount: z.number().int().min(0),
+    newImageThisTurn: z.boolean().optional().default(false),
   }),
+  model: modelField,
 });
 
 // POST /api/fable/improve-source
 export const ImproveSourceRequestSchema = z.object({
   imageBase64: imageBase64Field,
   instruction: z.string().min(1, "instruction is required"),
+  model: modelField,
+  imageModel: modelField,
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
 
@@ -37,6 +44,7 @@ export const AnalyzeStyleRequestSchema = z.object({
   imageBase64: imageBase64Field,
   guidance: z.string().optional(),
   maxIcons: z.number().int().min(1).optional(),
+  model: modelField,
 });
 
 // FableOp sub-schema — flat shape mirroring the types.ts definition.
@@ -76,6 +84,7 @@ export const RevisePromptsRequestSchema = z.object({
   sharedStylePrompt: z.string().min(1),
   candidates: z.array(IconCandidateSchema).min(1),
   ops: z.array(FableOpSchema).min(1),
+  model: modelField,
 });
 
 // POST /api/fable/preview-sheet
@@ -93,6 +102,7 @@ export const PreviewSheetRequestSchema = z.object({
   icons: z.array(PreviewSheetIconSchema).min(1),
   sheetIndex: z.number().int().min(0),
   instruction: z.string().optional(),
+  imageModel: modelField,
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
 
@@ -107,6 +117,7 @@ export const FinalIconRequestSchema = z.object({
     prompt: z.string(),
   }),
   sheetPosition: z.string().optional(),
+  imageModel: modelField,
   quality: z.enum(["low", "medium", "high"]).optional(),
 });
 

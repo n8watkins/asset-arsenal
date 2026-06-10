@@ -3,14 +3,17 @@
 // Fable Bench — finals artifact card (inline in the chat feed).
 //
 // Responsive icon grid on a checkerboard-transparency backdrop, with shimmer
-// while generating, retry on fail, per-icon download + regenerate. A progress
-// line ("7/9 done · $0.08") and, once complete, Download all + "Save & finish".
+// while generating, retry on fail, per-icon download + regenerate. Icons are
+// clickable → detailed Lightbox (download / open in new tab). A progress line
+// ("7/9 done · $0.08") and, once complete, Download all + "Save & finish".
 // Updates live as icons stream in (renders straight from project.finals).
 
+import { useState } from "react";
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
 import { totalCostUSD } from "@/lib/fable/pricing";
+import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableFinalIcon, FableProject } from "@/lib/fable/types";
-import { ArtifactCard, CardAction, fmtUsd, Pill } from "../ui";
+import { ArtifactCard, CardAction, fmtUsd, Lightbox, Pill } from "../ui";
 
 const CHECKER = "repeating-conic-gradient(#27272a 0% 25%, #18181b 0% 50%) 50% / 16px 16px";
 
@@ -33,6 +36,7 @@ export default function FinalsCard({
     finals.length > 0 && finals.every((f) => f.status === "success" || f.status === "failed");
   const allOk = finals.length > 0 && finals.every((f) => f.status === "success");
   const cost = totalCostUSD(project.usage, "openai");
+  const [enlarged, setEnlarged] = useState<FableFinalIcon | null>(null);
 
   function downloadAll() {
     for (const f of successes) {
@@ -66,6 +70,7 @@ export default function FinalsCard({
             busy={busy}
             onRetry={onRetry}
             onRegenerate={onRegenerate}
+            onEnlarge={() => setEnlarged(f)}
           />
         ))}
         {finals.length === 0 && <p className="text-sm text-zinc-600">No finals yet.</p>}
@@ -81,6 +86,15 @@ export default function FinalsCard({
           </CardAction>
         )}
       </div>
+
+      {enlarged && enlarged.imageUrl && (
+        <Lightbox
+          src={enlarged.imageUrl}
+          caption={enlarged.name}
+          downloadName={enlarged.name}
+          onClose={() => setEnlarged(null)}
+        />
+      )}
     </ArtifactCard>
   );
 }
@@ -90,22 +104,31 @@ function FinalCell({
   busy,
   onRetry,
   onRegenerate,
+  onEnlarge,
 }: {
   final: FableFinalIcon;
   busy: boolean;
   onRetry: (iconId: string) => void;
   onRegenerate: (iconId: string) => void;
+  onEnlarge: () => void;
 }) {
   const pending = final.status === "pending" || final.status === "generating";
+  const displaySrc = useObjectUrl(final.status === "success" ? final.imageUrl : null);
   return (
     <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 p-2">
       <div
         className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg"
         style={{ background: CHECKER }}
       >
-        {final.status === "success" && final.imageUrl ? (
+        {final.status === "success" && displaySrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={final.imageUrl} alt={final.name} className="h-full w-full object-contain" />
+          <img
+            src={displaySrc}
+            alt={final.name}
+            className="h-full w-full cursor-zoom-in object-contain"
+            title="Click to enlarge"
+            onClick={onEnlarge}
+          />
         ) : final.status === "failed" ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-red-950/40 p-2 text-center">
             <span className="text-[10px] text-red-300">{final.error ?? "failed"}</span>

@@ -9,7 +9,13 @@
 // (logged) so a missing/blocked IndexedDB never crashes the workspace.
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import { approvedSource, type FableProject, type FableStage } from "./types";
+import {
+  approvedSource,
+  DEFAULT_FABLE_MODEL_CONFIG,
+  type FableProject,
+  type FableStage,
+  type FableUsageRecord,
+} from "./types";
 
 // Lightweight summary returned by listProjects() for the Projects panel.
 export type FableProjectSummary = {
@@ -54,6 +60,16 @@ function getDB(): Promise<IDBPDatabase<FableBenchDB>> {
   return _dbPromise;
 }
 
+/** Records persisted before `models` existed get the defaults backfilled. */
+function withDefaults(p: FableProject): FableProject {
+  return p.models ? p : { ...p, models: { ...DEFAULT_FABLE_MODEL_CONFIG } };
+}
+
+/** An empty leftover row: never got a message or an image — not worth keeping. */
+function isEmptyProject(p: FableProject): boolean {
+  return p.events.length === 0 && !p.original && p.improved.length === 0;
+}
+
 /** Persist the whole project as-is (data URLs included). Best-effort. */
 export async function saveProject(p: FableProject): Promise<void> {
   try {
@@ -68,19 +84,24 @@ export async function saveProject(p: FableProject): Promise<void> {
 export async function loadProject(id: string): Promise<FableProject | null> {
   try {
     const db = await getDB();
-    return (await db.get("projects", id)) ?? null;
+    const p = await db.get("projects", id);
+    return p ? withDefaults(p) : null;
   } catch (err) {
     console.error("[fable/store] loadProject failed", err);
     return null;
   }
 }
 
-/** Newest-first lightweight summaries for the Projects panel. */
+/** Newest-first lightweight summaries for the Projects panel. Empty leftover
+ *  rows (no events, no image) are garbage-collected on the way through. */
 export async function listProjects(): Promise<FableProjectSummary[]> {
   try {
     const db = await getDB();
     const all = await db.getAllFromIndex("projects", "by-updatedAt");
+    const empties = all.filter(isEmptyProject);
+    for (const p of empties) void db.delete("projects", p.id);
     return all
+      .filter((p) => !isEmptyProject(p))
       .slice()
       .reverse() // by-updatedAt is ascending; we want newest first
       .map((p) => {
@@ -100,6 +121,22 @@ export async function listProjects(): Promise<FableProjectSummary[]> {
       });
   } catch (err) {
     console.error("[fable/store] listProjects failed", err);
+    return [];
+  }
+}
+
+/** Per-project usage ledgers across every saved project (for the Usage panel).
+ *  The caller merges in the live in-memory project (which may be ahead of, or
+ *  absent from, the store). */
+export type FableProjectUsage = { projectId: string; usage: FableUsageRecord[] };
+
+export async function getAllUsage(): Promise<FableProjectUsage[]> {
+  try {
+    const db = await getDB();
+    const all = await db.getAll("projects");
+    return all.map((p) => ({ projectId: p.id, usage: p.usage ?? [] }));
+  } catch (err) {
+    console.error("[fable/store] getAllUsage failed", err);
     return [];
   }
 }

@@ -1,7 +1,7 @@
 import { ImproveSourceRequestSchema } from "@/lib/fable/schemas";
 import { improveSourceBrief } from "@/lib/fable/gemini-steps";
 import { renderImprovedSource } from "@/lib/fable/openai-steps";
-import { FableError } from "@/lib/fable/errors";
+import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { GeminiError } from "@/lib/gemini/errors";
 import type { FableUsageRecord } from "@/lib/fable/types";
 
@@ -21,18 +21,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const { imageBase64, instruction, quality } = parsed.data;
+  const { imageBase64, instruction, model, imageModel, quality } = parsed.data;
   const accumulatedUsage: FableUsageRecord[] = [];
 
   try {
     // Step 1: Gemini writes the critique + image prompt.
-    const briefResult = await improveSourceBrief({ imageBase64, instruction });
+    const briefResult = await improveSourceBrief({ imageBase64, instruction, model });
     accumulatedUsage.push(...briefResult.usage);
 
     // Step 2: OpenAI renders the improved source image.
     const renderResult = await renderImprovedSource({
       imageBase64,
       imagePrompt: briefResult.imagePrompt,
+      model: imageModel,
       quality,
     });
     accumulatedUsage.push(...renderResult.usage);
@@ -47,15 +48,26 @@ export async function POST(request: Request) {
     console.error("[fable/improve-source]", err);
     if (err instanceof FableError) {
       return Response.json(
-        { error: err.message, usage: [...accumulatedUsage, ...err.usage] },
+        {
+          error: err.message,
+          usage: [...accumulatedUsage, ...err.usage],
+          raw: serializeRawError(err.rawError),
+        },
         { status: 500 },
       );
     }
     if (err instanceof GeminiError) {
-      return Response.json({ error: err.message, usage: accumulatedUsage }, { status: 500 });
+      return Response.json(
+        { error: err.message, usage: accumulatedUsage, raw: serializeRawError(err.rawError) },
+        { status: 500 },
+      );
     }
     return Response.json(
-      { error: "An unexpected error occurred during source improvement.", usage: accumulatedUsage },
+      {
+        error: "An unexpected error occurred during source improvement.",
+        usage: accumulatedUsage,
+        raw: serializeRawError(err),
+      },
       { status: 500 },
     );
   }

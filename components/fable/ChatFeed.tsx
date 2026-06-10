@@ -24,6 +24,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FableProject, IconCandidate } from "@/lib/fable/types";
 import type { FableBusy, PendingDecision, UseFable } from "@/lib/fable/use-fable";
+import { useObjectUrl } from "@/lib/fable/use-object-url";
 import { Lightbox } from "./ui";
 import SourceCard from "./cards/SourceCard";
 import BlueprintCard from "./cards/BlueprintCard";
@@ -52,6 +53,12 @@ export default function ChatFeed({
 }) {
   const { project, devMode } = fable;
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // The hook's callbacks are stable across renders; reading them through a ref
+  // keeps them out of the items memo's dependency list (the `fable` object
+  // itself is a fresh literal every render and would defeat the memo).
+  const fableRef = useRef(fable);
+  fableRef.current = fable;
 
   // Auto-scroll to the bottom as new content streams in.
   useEffect(() => {
@@ -107,8 +114,8 @@ export default function ChatFeed({
           <SourceCard
             project={project}
             busy={!!busy.step}
-            onApprove={fable.approveSource}
-            onRegenerate={fable.regenerateSource}
+            onApprove={() => fableRef.current.approveSource()}
+            onRegenerate={(instruction) => fableRef.current.regenerateSource(instruction)}
           />
         ),
       });
@@ -133,10 +140,10 @@ export default function ChatFeed({
           <BlueprintCard
             project={project}
             busy={!!busy.step}
-            onGeneratePreviews={fable.runPreviews}
-            onRemoveCandidate={fable.removeCandidate}
+            onGeneratePreviews={() => fableRef.current.runPreviews()}
+            onRemoveCandidate={(id: string) => fableRef.current.removeCandidate(id)}
             onUpdateCandidate={(id: string, patch: Partial<IconCandidate>) =>
-              fable.updateCandidate(id, patch)
+              fableRef.current.updateCandidate(id, patch)
             }
           />
         ),
@@ -154,12 +161,15 @@ export default function ChatFeed({
             project={project}
             busy={!!busy.step}
             dimmed={sheet.status === "superseded"}
-            onGenerateFinals={() => fable.approveSheetAndGenerateFinals(sheet.id)}
-            onRegenerateSheet={fable.regenerateSheet}
-            onTryAnotherSheet={(instruction) =>
-              fable.sendMessage(`Try another sheet: ${instruction}`, null)
+            onGenerateFinals={() => fableRef.current.approveSheetAndGenerateFinals(sheet.id)}
+            onRegenerateSheet={(id, instruction) =>
+              fableRef.current.regenerateSheet(id, instruction)
             }
-            onIconOp={(text) => fable.sendMessage(text, null)}
+            // Mechanical actions — structured executors, no agent round-trip.
+            onTryAnotherSheet={(instruction) =>
+              fableRef.current.tryAnotherSheet(sheet.id, instruction)
+            }
+            onIconOp={(ops, description) => fableRef.current.reviseIconsDirect(ops, description)}
           />
         ),
       });
@@ -178,9 +188,10 @@ export default function ChatFeed({
           <FinalsCard
             project={project}
             busy={!!busy.step}
-            onRetry={fable.retryFinal}
-            onRegenerate={(iconId) => fable.sendMessage(`Regenerate the ${iconId} icon.`, null)}
-            onSaveFinish={() => fable.sendMessage("Save and finish the project.", null)}
+            onRetry={(iconId) => fableRef.current.retryFinal(iconId)}
+            // Mechanical regen — direct retryFinal path with a feed note.
+            onRegenerate={(iconId) => fableRef.current.regenerateFinal(iconId)}
+            onSaveFinish={() => fableRef.current.sendMessage("Save and finish the project.", null)}
           />
         ),
       });
@@ -200,8 +211,9 @@ export default function ChatFeed({
       return t !== 0 ? t : a.order - b.order;
     });
     return out;
+    // fableRef carries the (stable) callbacks — only real inputs are deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, devMode, busy.step, fable]);
+  }, [project, devMode, busy.step]);
 
   const working = !!busy.step;
 
@@ -256,13 +268,14 @@ function UserBubble({
   imageUrl?: string;
 }) {
   const [enlarged, setEnlarged] = useState(false);
+  const displaySrc = useObjectUrl(imageUrl);
   return (
     <div className="fable-card-in flex justify-end">
       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-cyan-500/15 px-4 py-2.5 text-sm text-cyan-50 ring-1 ring-cyan-500/25">
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={imageUrl}
+            src={displaySrc}
             alt="attached"
             className="mb-2 max-h-56 cursor-zoom-in rounded-xl ring-1 ring-cyan-500/20"
             onClick={() => setEnlarged(true)}
@@ -280,7 +293,14 @@ function UserBubble({
           !imageUrl && <p className="opacity-60">(image)</p>
         )}
       </div>
-      {enlarged && imageUrl && <Lightbox src={imageUrl} onClose={() => setEnlarged(false)} />}
+      {enlarged && imageUrl && (
+        <Lightbox
+          src={imageUrl}
+          caption="Attached image"
+          downloadName="attachment"
+          onClose={() => setEnlarged(false)}
+        />
+      )}
     </div>
   );
 }

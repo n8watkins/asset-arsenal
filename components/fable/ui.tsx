@@ -2,6 +2,9 @@
 
 // Fable Bench — small shared UI primitives (dark zinc / cyan language).
 
+import { useEffect } from "react";
+import { downloadDataUrl, slugify } from "@/lib/icon/download";
+import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableStage } from "@/lib/fable/types";
 
 export function fmtUsd(n: number): string {
@@ -161,20 +164,70 @@ export function ArtifactCard({
   );
 }
 
-/** A simple full-screen lightbox for enlarging an image. */
-export function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+/** Full-screen lightbox: Escape closes, body scroll locks while open, and the
+ *  image gets Download / Open-in-new-tab actions (object URL — browsers refuse
+ *  to open multi-MB data URLs directly) plus an optional caption line. */
+export function Lightbox({
+  src,
+  caption,
+  downloadName,
+  onClose,
+}: {
+  src: string;
+  caption?: string;
+  downloadName?: string;
+  onClose: () => void;
+}) {
+  // Data URLs are converted to object URLs for display + open-in-new-tab.
+  const displaySrc = useObjectUrl(src);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-black/80 p-6 backdrop-blur-sm"
       onClick={onClose}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={src}
-        alt="enlarged"
-        className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
+        src={displaySrc}
+        alt={caption ?? "enlarged"}
+        className="min-h-0 max-h-full max-w-full rounded-xl object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
+      <div
+        className="flex shrink-0 flex-wrap items-center justify-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {caption && <span className="mr-1 text-sm text-zinc-300">{caption}</span>}
+        <button
+          onClick={() => downloadDataUrl(src, `${slugify(downloadName ?? caption ?? "image")}.png`)}
+          className="rounded-lg bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-200 ring-1 ring-cyan-500/40 hover:bg-cyan-500/25"
+        >
+          ⤓ Download
+        </button>
+        {displaySrc && (
+          <a
+            href={displaySrc}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-zinc-700 bg-zinc-900/70 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800"
+          >
+            ↗ Open in new tab
+          </a>
+        )}
+      </div>
       <button
         onClick={onClose}
         className="absolute right-5 top-5 rounded-full bg-zinc-900/80 px-3 py-1 text-sm text-zinc-300 ring-1 ring-zinc-700 hover:text-zinc-100"

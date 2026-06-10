@@ -16,3 +16,25 @@ export class FableError extends Error {
     this.name = "FableError";
   }
 }
+
+/** JSON-safe rendering of a raw provider error for the { raw } error payload
+ *  (surfaced in the Dev drawer). Errors aren't JSON-serializable as-is. */
+export function serializeRawError(raw: unknown): unknown {
+  if (raw == null) return undefined;
+  if (raw instanceof Error) {
+    const extra = raw as Error & { status?: unknown; code?: unknown; error?: unknown };
+    return {
+      name: raw.name,
+      message: raw.message,
+      ...(extra.status !== undefined ? { status: extra.status } : {}),
+      ...(extra.code !== undefined ? { code: extra.code } : {}),
+      ...(extra.error !== undefined ? { error: serializeRawError(extra.error) } : {}),
+    };
+  }
+  try {
+    JSON.stringify(raw);
+    return raw;
+  } catch {
+    return String(raw);
+  }
+}

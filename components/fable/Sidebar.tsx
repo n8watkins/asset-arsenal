@@ -17,7 +17,8 @@ import { fmtRelative, Pill, STAGE_LABELS } from "./ui";
 export default function Sidebar({
   open,
   currentId,
-  // Bumped by the page whenever the project updates, so the list refreshes.
+  // The current project's updatedAt — changes on EVERY mutation (renames,
+  // artifact updates, …), so the list refreshes.
   refreshKey,
   onClose,
   onNew,
@@ -25,7 +26,7 @@ export default function Sidebar({
 }: {
   open: boolean;
   currentId: string;
-  refreshKey: number;
+  refreshKey: string | number;
   onClose: () => void;
   onNew: () => void;
   onOpen: (p: FableProject) => void;

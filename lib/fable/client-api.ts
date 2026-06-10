@@ -10,6 +10,7 @@ import type {
   AgentResponse,
   AnalyzeStyleRequest,
   AnalyzeStyleResponse,
+  FableUsageRecord,
   FinalIconRequest,
   FinalIconResponse,
   ImproveSourceRequest,
@@ -19,6 +20,20 @@ import type {
   RevisePromptsRequest,
   RevisePromptsResponse,
 } from "./types";
+
+/** Thrown when a route responds non-OK. Carries any usage the server accumulated
+ *  before failing (FableApiError.usage) plus the serialized raw provider error,
+ *  so the hook can still ledger the spend and surface the payload in dev. */
+export class FableRequestError extends Error {
+  usage?: FableUsageRecord[];
+  raw?: unknown;
+  constructor(message: string, usage?: FableUsageRecord[], raw?: unknown) {
+    super(message);
+    this.name = "FableRequestError";
+    this.usage = usage;
+    this.raw = raw;
+  }
+}
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   let res: Response;
@@ -33,8 +48,10 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
   }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error(
+    throw new FableRequestError(
       (typeof data.error === "string" && data.error) || "Request failed.",
+      Array.isArray(data.usage) ? (data.usage as FableUsageRecord[]) : undefined,
+      data.raw,
     );
   }
   return data as T;

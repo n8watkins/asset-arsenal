@@ -1,7 +1,7 @@
 import { FinalIconRequestSchema } from "@/lib/fable/schemas";
 import { renderFinalIcon } from "@/lib/fable/openai-steps";
 import { buildFinalIconWrapper } from "@/lib/fable/prompts";
-import { FableError } from "@/lib/fable/errors";
+import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { FABLE_MODELS } from "@/lib/fable/types";
 import type { FableFinalIcon } from "@/lib/fable/types";
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { referenceImageBase64, sharedStylePrompt, icon, sheetPosition, quality } =
+  const { referenceImageBase64, sharedStylePrompt, icon, sheetPosition, imageModel, quality } =
     parsed.data;
 
   // Assemble the wrapped prompt in code — no model call needed.
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
     const { imageBase64, usage } = await renderFinalIcon({
       referenceImageBase64,
       wrappedPrompt,
+      model: imageModel,
       quality,
     });
 
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
       name: icon.name,
       prompt: wrappedPrompt,
       imageUrl: imageBase64,
-      model: FABLE_MODELS.image,
+      model: imageModel ?? FABLE_MODELS.image,
       quality: quality ?? "medium",
       status: "success",
       createdAt: new Date().toISOString(),
@@ -56,10 +57,16 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error("[fable/final-icon]", err);
     if (err instanceof FableError) {
-      return Response.json({ error: err.message, usage: err.usage }, { status: 500 });
+      return Response.json(
+        { error: err.message, usage: err.usage, raw: serializeRawError(err.rawError) },
+        { status: 500 },
+      );
     }
     return Response.json(
-      { error: "An unexpected error occurred during final icon rendering." },
+      {
+        error: "An unexpected error occurred during final icon rendering.",
+        raw: serializeRawError(err),
+      },
       { status: 500 },
     );
   }

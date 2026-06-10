@@ -1,7 +1,7 @@
 // Fable Bench — server-only OpenAI image-generation steps.
 //
 // All three functions:
-//   - use getClient() + FABLE_MODELS.image + images.edit
+//   - use getClient() + the caller's image model (default FABLE_MODELS.image) + images.edit
 //   - return { ...result, usage: FableUsageRecord[] }
 //   - on failure, build a usage record with ok:false + error and attach it
 //     to a FableError so the route can append it to the ledger
@@ -20,9 +20,11 @@ import type { FableUsageRecord, ImageQuality } from "./types";
 export async function renderImprovedSource(args: {
   imageBase64: string;
   imagePrompt: string;
+  model?: string;
   quality?: ImageQuality;
 }): Promise<{ imageBase64: string; usage: FableUsageRecord[] }> {
   const client = getClient();
+  const model = args.model ?? FABLE_MODELS.image;
   const quality = args.quality ?? "medium";
   const start = Date.now();
   const promptPreview = previewOf(args.imagePrompt);
@@ -31,7 +33,7 @@ export async function renderImprovedSource(args: {
   try {
     const sourceFile = await imageBase64ToFile(args.imageBase64, "source.png");
     res = await client.images.edit({
-      model: FABLE_MODELS.image,
+      model,
       image: sourceFile,
       prompt: args.imagePrompt,
       n: 1,
@@ -43,7 +45,7 @@ export async function renderImprovedSource(args: {
     const durationMs = Date.now() - start;
     const usageRecord = openaiImageUsageRecord({
       step: "improve_source_image",
-      model: FABLE_MODELS.image,
+      model,
       quality,
       imageCount: 1,
       durationMs,
@@ -65,7 +67,7 @@ export async function renderImprovedSource(args: {
   if (!b64) {
     const usageRecord = openaiImageUsageRecord({
       step: "improve_source_image",
-      model: FABLE_MODELS.image,
+      model,
       quality,
       imageCount: 1,
       durationMs,
@@ -78,7 +80,7 @@ export async function renderImprovedSource(args: {
 
   const usageRecord = openaiImageUsageRecord({
     step: "improve_source_image",
-    model: FABLE_MODELS.image,
+    model,
     quality,
     imageCount: 1,
     durationMs,
@@ -99,9 +101,11 @@ export async function renderImprovedSource(args: {
 export async function renderPreviewSheet(args: {
   referenceImageBase64: string;
   sheetPrompt: string;
+  model?: string;
   quality?: ImageQuality;
 }): Promise<{ imageBase64: string; usage: FableUsageRecord[] }> {
   const client = getClient();
+  const model = args.model ?? FABLE_MODELS.image;
   const quality = args.quality ?? "medium";
   const start = Date.now();
   const promptPreview = previewOf(args.sheetPrompt);
@@ -110,7 +114,7 @@ export async function renderPreviewSheet(args: {
   try {
     const referenceFile = await imageBase64ToFile(args.referenceImageBase64, "reference.png");
     res = await client.images.edit({
-      model: FABLE_MODELS.image,
+      model,
       image: referenceFile,
       prompt: args.sheetPrompt,
       n: 1,
@@ -122,7 +126,7 @@ export async function renderPreviewSheet(args: {
     const durationMs = Date.now() - start;
     const usageRecord = openaiImageUsageRecord({
       step: "preview_image",
-      model: FABLE_MODELS.image,
+      model,
       quality,
       imageCount: 1,
       durationMs,
@@ -144,7 +148,7 @@ export async function renderPreviewSheet(args: {
   if (!b64) {
     const usageRecord = openaiImageUsageRecord({
       step: "preview_image",
-      model: FABLE_MODELS.image,
+      model,
       quality,
       imageCount: 1,
       durationMs,
@@ -157,7 +161,7 @@ export async function renderPreviewSheet(args: {
 
   const usageRecord = openaiImageUsageRecord({
     step: "preview_image",
-    model: FABLE_MODELS.image,
+    model,
     quality,
     imageCount: 1,
     durationMs,
@@ -178,9 +182,11 @@ export async function renderPreviewSheet(args: {
 export async function renderFinalIcon(args: {
   referenceImageBase64: string;
   wrappedPrompt: string;
+  model?: string;
   quality?: ImageQuality;
 }): Promise<{ imageBase64: string; usage: FableUsageRecord[] }> {
   const client = getClient();
+  const model = args.model ?? FABLE_MODELS.image;
   const quality = args.quality ?? "medium";
   const start = Date.now();
   const promptPreview = previewOf(args.wrappedPrompt);
@@ -189,7 +195,7 @@ export async function renderFinalIcon(args: {
   try {
     const referenceFile = await imageBase64ToFile(args.referenceImageBase64, "reference.png");
     res = await client.images.edit({
-      model: FABLE_MODELS.image,
+      model,
       image: referenceFile,
       prompt: args.wrappedPrompt,
       n: 1,
@@ -201,7 +207,7 @@ export async function renderFinalIcon(args: {
     const durationMs = Date.now() - start;
     const usageRecord = openaiImageUsageRecord({
       step: "final_icon",
-      model: FABLE_MODELS.image,
+      model,
       quality,
       imageCount: 1,
       durationMs,
@@ -223,7 +229,7 @@ export async function renderFinalIcon(args: {
   if (!b64) {
     const usageRecord = openaiImageUsageRecord({
       step: "final_icon",
-      model: FABLE_MODELS.image,
+      model,
       quality,
       imageCount: 1,
       durationMs,
@@ -236,7 +242,7 @@ export async function renderFinalIcon(args: {
 
   const usageRecord = openaiImageUsageRecord({
     step: "final_icon",
-    model: FABLE_MODELS.image,
+    model,
     quality,
     imageCount: 1,
     durationMs,

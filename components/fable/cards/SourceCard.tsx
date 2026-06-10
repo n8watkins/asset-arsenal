@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { approvedSource, type FableProject } from "@/lib/fable/types";
+import { useObjectUrl } from "@/lib/fable/use-object-url";
 import { ArtifactCard, CardAction, Lightbox, Pill } from "../ui";
 
 type Tab = "before" | "after";
@@ -39,6 +40,8 @@ export default function SourceCard({
   const past = improved.slice(0, -1); // older improved versions
 
   const shownImage = tab === "before" ? original?.imageUrl : shown?.imageUrl;
+  // Multi-MB data URLs render via object URLs (right-click / open-in-tab work).
+  const shownSrc = useObjectUrl(shownImage);
 
   return (
     <ArtifactCard
@@ -77,7 +80,7 @@ export default function SourceCard({
         {shownImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={shownImage}
+            src={shownSrc}
             alt={tab}
             onClick={() => setLightbox(shownImage)}
             className="aspect-video w-full cursor-zoom-in bg-zinc-950 object-contain"
@@ -93,20 +96,16 @@ export default function SourceCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] text-zinc-600">versions</span>
           {improved.map((s, i) => (
-            <button
+            <VersionThumb
               key={s.id}
-              onClick={() => {
+              imageUrl={s.imageUrl}
+              label={`v${i + 1}`}
+              selected={shown?.id === s.id}
+              onSelect={() => {
                 setShownId(s.id);
                 setTab("after");
               }}
-              className={`overflow-hidden rounded-md border ${
-                shown?.id === s.id ? "border-cyan-500/60" : "border-zinc-800 opacity-60"
-              }`}
-              title={`v${i + 1}`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={s.imageUrl} alt={`v${i + 1}`} className="h-9 w-9 object-cover" />
-            </button>
+            />
           ))}
         </div>
       )}
@@ -149,7 +148,40 @@ export default function SourceCard({
         />
       </div>
 
-      {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && (
+        <Lightbox
+          src={lightbox}
+          caption={tab === "before" ? "Original source" : "Improved source"}
+          downloadName="source"
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </ArtifactCard>
+  );
+}
+
+function VersionThumb({
+  imageUrl,
+  label,
+  selected,
+  onSelect,
+}: {
+  imageUrl: string;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const src = useObjectUrl(imageUrl);
+  return (
+    <button
+      onClick={onSelect}
+      className={`overflow-hidden rounded-md border ${
+        selected ? "border-cyan-500/60" : "border-zinc-800 opacity-60"
+      }`}
+      title={label}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={label} className="h-9 w-9 object-cover" />
+    </button>
   );
 }

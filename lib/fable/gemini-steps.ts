@@ -1,7 +1,7 @@
 // Fable Bench — server-only Gemini steps (flash-lite, structured JSON output).
 //
 // All four functions:
-//   - use getGeminiClient() + FABLE_MODELS.analysis
+//   - use getGeminiClient() + the caller's model (default FABLE_MODELS.analysis)
 //   - set temperature 0, responseMimeType "application/json", responseSchema
 //   - measure durationMs and record token usage via geminiUsageRecord()
 //   - return { ...result, usage: FableUsageRecord[] }
@@ -70,9 +70,10 @@ const agentResponseSchema = {
     confidence: { type: Type.NUMBER },
     reason: { type: Type.STRING },
     assistantReply: { type: Type.STRING },
+    suggestedTitle: { type: Type.STRING },
   },
   required: ["intent", "ops", "confidence", "reason", "assistantReply"],
-  propertyOrdering: ["intent", "ops", "confidence", "reason", "assistantReply"],
+  propertyOrdering: ["intent", "ops", "confidence", "reason", "assistantReply", "suggestedTitle"],
 };
 
 // Zod schema to re-validate the model's JSON output server-side.
@@ -89,14 +90,17 @@ const AgentOutputSchema = z.object({
   confidence: z.number().min(0).max(1),
   reason: z.string(),
   assistantReply: z.string(),
+  suggestedTitle: z.string().nullable().optional(),
 });
 
 export async function runAgent(args: {
   text: string;
   imageBase64: string | null;
   state: FableStateSummary;
+  model?: string;
 }): Promise<{ decision: FableDecision; usage: FableUsageRecord[] }> {
   const ai = getGeminiClient();
+  const model = args.model ?? FABLE_MODELS.analysis;
   const start = Date.now();
 
   // Build the user-turn parts: state JSON + text + optional image.
@@ -114,7 +118,7 @@ export async function runAgent(args: {
   let res;
   try {
     res = await ai.models.generateContent({
-      model: FABLE_MODELS.analysis,
+      model,
       contents: [{ role: "user", parts }],
       config: {
         systemInstruction: AGENT_SYSTEM_INSTRUCTION,
@@ -127,7 +131,7 @@ export async function runAgent(args: {
     const durationMs = Date.now() - start;
     const usageRecord = geminiUsageRecord({
       step: "agent_route",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: args.imageBase64 ? "image+text" : "text",
       outputType: "json",
       durationMs,
@@ -150,7 +154,7 @@ export async function runAgent(args: {
   if (!raw) {
     const usageRecord = geminiUsageRecord({
       step: "agent_route",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: args.imageBase64 ? "image+text" : "text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -169,7 +173,7 @@ export async function runAgent(args: {
   } catch {
     const usageRecord = geminiUsageRecord({
       step: "agent_route",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: args.imageBase64 ? "image+text" : "text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -190,7 +194,7 @@ export async function runAgent(args: {
   if (!valid.success) {
     const usageRecord = geminiUsageRecord({
       step: "agent_route",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: args.imageBase64 ? "image+text" : "text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -210,7 +214,7 @@ export async function runAgent(args: {
   const data = valid.data;
   const usageRecord = geminiUsageRecord({
     step: "agent_route",
-    model: FABLE_MODELS.analysis,
+    model,
     inputType: args.imageBase64 ? "image+text" : "text",
     outputType: "json",
     inputTokens: meta?.promptTokenCount ?? 0,
@@ -234,6 +238,7 @@ export async function runAgent(args: {
     reason: data.reason,
     assistantReply: data.assistantReply,
     ops,
+    suggestedTitle: data.suggestedTitle?.trim() || null,
   };
 
   return { decision, usage: [usageRecord] };
@@ -261,8 +266,10 @@ const ImproveBriefOutputSchema = z.object({
 export async function improveSourceBrief(args: {
   imageBase64: string;
   instruction: string;
+  model?: string;
 }): Promise<{ critique: string; imagePrompt: string; usage: FableUsageRecord[] }> {
   const ai = getGeminiClient();
+  const model = args.model ?? FABLE_MODELS.analysis;
   const start = Date.now();
   const prompt = buildImproveSourceBrief(args.instruction);
   const promptPreview = previewOf(prompt);
@@ -271,7 +278,7 @@ export async function improveSourceBrief(args: {
   let res;
   try {
     res = await ai.models.generateContent({
-      model: FABLE_MODELS.analysis,
+      model,
       contents: [
         {
           role: "user",
@@ -291,7 +298,7 @@ export async function improveSourceBrief(args: {
     const durationMs = Date.now() - start;
     const usageRecord = geminiUsageRecord({
       step: "improve_source_brief",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       durationMs,
@@ -314,7 +321,7 @@ export async function improveSourceBrief(args: {
   if (!raw) {
     const usageRecord = geminiUsageRecord({
       step: "improve_source_brief",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -333,7 +340,7 @@ export async function improveSourceBrief(args: {
   } catch {
     const usageRecord = geminiUsageRecord({
       step: "improve_source_brief",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -350,7 +357,7 @@ export async function improveSourceBrief(args: {
   if (!valid.success) {
     const usageRecord = geminiUsageRecord({
       step: "improve_source_brief",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -369,7 +376,7 @@ export async function improveSourceBrief(args: {
 
   const usageRecord = geminiUsageRecord({
     step: "improve_source_brief",
-    model: FABLE_MODELS.analysis,
+    model,
     inputType: "image+text",
     outputType: "json",
     inputTokens: meta?.promptTokenCount ?? 0,
@@ -472,6 +479,7 @@ export async function analyzeStyle(args: {
   imageBase64: string;
   guidance?: string;
   maxIcons?: number;
+  model?: string;
 }): Promise<{
   style: FableStyle;
   sharedStylePrompt: string;
@@ -479,6 +487,7 @@ export async function analyzeStyle(args: {
   usage: FableUsageRecord[];
 }> {
   const ai = getGeminiClient();
+  const model = args.model ?? FABLE_MODELS.analysis;
   const start = Date.now();
   const maxIcons = Math.min(args.maxIcons ?? FABLE_LIMITS.maxCandidates, FABLE_LIMITS.maxCandidates);
   const prompt = buildAnalyzeComposer(args.guidance ?? "", maxIcons);
@@ -488,7 +497,7 @@ export async function analyzeStyle(args: {
   let res;
   try {
     res = await ai.models.generateContent({
-      model: FABLE_MODELS.analysis,
+      model,
       contents: [
         {
           role: "user",
@@ -508,7 +517,7 @@ export async function analyzeStyle(args: {
     const durationMs = Date.now() - start;
     const usageRecord = geminiUsageRecord({
       step: "analyze",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       durationMs,
@@ -531,7 +540,7 @@ export async function analyzeStyle(args: {
   if (!raw) {
     const usageRecord = geminiUsageRecord({
       step: "analyze",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -550,7 +559,7 @@ export async function analyzeStyle(args: {
   } catch {
     const usageRecord = geminiUsageRecord({
       step: "analyze",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -567,7 +576,7 @@ export async function analyzeStyle(args: {
   if (!valid.success) {
     const usageRecord = geminiUsageRecord({
       step: "analyze",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "image+text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -586,7 +595,7 @@ export async function analyzeStyle(args: {
 
   const usageRecord = geminiUsageRecord({
     step: "analyze",
-    model: FABLE_MODELS.analysis,
+    model,
     inputType: "image+text",
     outputType: "json",
     inputTokens: meta?.promptTokenCount ?? 0,
@@ -664,12 +673,14 @@ export async function revisePrompts(args: {
   sharedStylePrompt: string;
   candidates: IconCandidate[];
   ops: FableOp[];
+  model?: string;
 }): Promise<{
   candidates: IconCandidate[];
   sharedStylePrompt: string;
   usage: FableUsageRecord[];
 }> {
   const ai = getGeminiClient();
+  const model = args.model ?? FABLE_MODELS.analysis;
   const start = Date.now();
   const prompt = buildReviseComposer(args);
   const promptPreview = previewOf(prompt);
@@ -677,7 +688,7 @@ export async function revisePrompts(args: {
   let res;
   try {
     res = await ai.models.generateContent({
-      model: FABLE_MODELS.analysis,
+      model,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -689,7 +700,7 @@ export async function revisePrompts(args: {
     const durationMs = Date.now() - start;
     const usageRecord = geminiUsageRecord({
       step: "revise_prompts",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "text",
       outputType: "json",
       durationMs,
@@ -712,7 +723,7 @@ export async function revisePrompts(args: {
   if (!raw) {
     const usageRecord = geminiUsageRecord({
       step: "revise_prompts",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -731,7 +742,7 @@ export async function revisePrompts(args: {
   } catch {
     const usageRecord = geminiUsageRecord({
       step: "revise_prompts",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -748,7 +759,7 @@ export async function revisePrompts(args: {
   if (!valid.success) {
     const usageRecord = geminiUsageRecord({
       step: "revise_prompts",
-      model: FABLE_MODELS.analysis,
+      model,
       inputType: "text",
       outputType: "json",
       inputTokens: meta?.promptTokenCount ?? 0,
@@ -767,7 +778,7 @@ export async function revisePrompts(args: {
 
   const usageRecord = geminiUsageRecord({
     step: "revise_prompts",
-    model: FABLE_MODELS.analysis,
+    model,
     inputType: "text",
     outputType: "json",
     inputTokens: meta?.promptTokenCount ?? 0,

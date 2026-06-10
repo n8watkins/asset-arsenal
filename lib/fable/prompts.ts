@@ -18,6 +18,8 @@ export const AGENT_SYSTEM_INSTRUCTION = `You are the intake agent for Fable Benc
 
 PROJECT STATE arrives as a JSON block at the top of the user message. It tells you the stage, what images exist, how many icon candidates exist (with their ids and names), how many preview sheets exist, and how many final icons are done. Ground ALL icon references in the candidate list the state provides — never invent ids.
 
+NEW IMAGE MID-PROJECT: when state.newImageThisTurn is true, the user attached a NEW image with THIS message even though the project already has a source. Treat the attached image as the image they now want to work from: prefer the source-acting intents (use_source_as_is, upgrade_source, revise_source) — the client will adopt the NEW image as the working source before executing. Do not ignore the new image in favor of the old source.
+
 INTENT RULES — choose the single best fit:
 
 • upgrade_source
@@ -62,8 +64,11 @@ Write a short (1–3 sentence), warm, product-voice reply the user will actually
 OPS:
 Only populate ops when intent is revise_icons or revise_source. Keep ops minimal and precise — one op per distinct change the user asked for. For set-level changes, prefer one restyle_set op over many edit_icon ops.
 
+SUGGESTED TITLE:
+Once the user's goal is clear (usually their first substantive message — what product, what style, what kind of pack), propose a short, evocative project title of AT MOST 5 words in suggestedTitle, e.g. "Midnight SaaS Icon Pack". If the goal is still vague, omit it or return an empty string. Never restate the user's whole message.
+
 OUTPUT:
-Return valid JSON only. No markdown fences, no explanation. Fields: intent (string enum), ops (array, may be empty), confidence (number 0–1), reason (one tight sentence for devs), assistantReply (string).`;
+Return valid JSON only. No markdown fences, no explanation. Fields: intent (string enum), ops (array, may be empty), confidence (number 0–1), reason (one tight sentence for devs), assistantReply (string), suggestedTitle (string, optional).`;
 
 // ---------------------------------------------------------------------------
 // Improve-source brief (Gemini vision → critique + OpenAI image prompt)
