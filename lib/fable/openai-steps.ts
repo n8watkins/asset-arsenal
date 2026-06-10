@@ -101,6 +101,9 @@ export async function renderImprovedSource(args: {
 export async function renderPreviewSheet(args: {
   referenceImageBase64: string;
   sheetPrompt: string;
+  /** B14: "transparent" requests background:"transparent" from images.edit;
+   *  any other value (or absent) renders opaque as before. */
+  background?: string;
   model?: string;
   quality?: ImageQuality;
 }): Promise<{ imageBase64: string; usage: FableUsageRecord[] }> {
@@ -119,7 +122,7 @@ export async function renderPreviewSheet(args: {
       prompt: args.sheetPrompt,
       n: 1,
       size: "1024x1024",
-      background: "opaque",
+      background: args.background === "transparent" ? "transparent" : "opaque",
       quality,
     });
   } catch (err) {
@@ -182,6 +185,10 @@ export async function renderPreviewSheet(args: {
 export async function renderFinalIcon(args: {
   referenceImageBase64: string;
   wrappedPrompt: string;
+  /** B15: optional crop of the original source for this icon — passed as a
+   *  SECOND reference image. The installed openai SDK's images.edit accepts
+   *  `image: Uploadable | Array<Uploadable>` for gpt-image models (≤16). */
+  sourceCropBase64?: string;
   model?: string;
   quality?: ImageQuality;
 }): Promise<{ imageBase64: string; usage: FableUsageRecord[] }> {
@@ -194,9 +201,12 @@ export async function renderFinalIcon(args: {
   let res;
   try {
     const referenceFile = await imageBase64ToFile(args.referenceImageBase64, "reference.png");
+    const cropFile = args.sourceCropBase64
+      ? await imageBase64ToFile(args.sourceCropBase64, "source-crop.png")
+      : null;
     res = await client.images.edit({
       model,
-      image: referenceFile,
+      image: cropFile ? [referenceFile, cropFile] : referenceFile,
       prompt: args.wrappedPrompt,
       n: 1,
       size: "1024x1024",

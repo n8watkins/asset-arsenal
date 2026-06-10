@@ -1,5 +1,6 @@
 import { AnalyzeStyleRequestSchema } from "@/lib/fable/schemas";
 import { analyzeStyle } from "@/lib/fable/gemini-steps";
+import { buildDebugRaw } from "@/lib/fable/debug";
 import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { GeminiError } from "@/lib/gemini/errors";
 
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { imageBase64, guidance, maxIcons, model } = parsed.data;
+  const { imageBase64, guidance, maxIcons, model, debug } = parsed.data;
 
   try {
     const { style, sharedStylePrompt, candidates, usage } = await analyzeStyle({
@@ -28,7 +29,10 @@ export async function POST(request: Request) {
       maxIcons,
       model,
     });
-    return Response.json({ style, sharedStylePrompt, candidates, usage });
+    const payload = { style, sharedStylePrompt, candidates, usage };
+    return Response.json(
+      debug ? { ...payload, debugRaw: buildDebugRaw(parsed.data, payload) } : payload,
+    );
   } catch (err) {
     console.error("[fable/analyze]", err);
     if (err instanceof FableError) {

@@ -84,6 +84,7 @@ export const FABLE_INTENTS = [
   "revise_source", //      user wants changes to the current improved source
   "approve_source", //     user accepted the source → move to style extraction
   "extract_style", //      run/re-run style + icon-candidate analysis
+  "edit_blueprint", //     change the STYLE blueprint itself (palette/mood/background…)
   "revise_icons", //       targeted changes to candidates / sheets (carries ops)
   "generate_previews", //  render preview sheet(s) from current candidates
   "generate_finals", //    previews approved → batch-generate standalone icons
@@ -102,6 +103,8 @@ export const FABLE_OP_KINDS = [
   "add_icon", //        add a new candidate (name + concept in fields)
   "restyle_set", //     apply an instruction to the WHOLE set's style/prompts
   "new_sheet", //       render another preview sheet variant
+  "edit_style", //      patch FableStyle fields per the instruction (B9/B10)
+  "set_background", //  instruction = "transparent" or a color → style.iconBackground (B14)
 ] as const;
 
 export type FableOpKind = (typeof FABLE_OP_KINDS)[number];
@@ -170,7 +173,14 @@ export type FableStyle = {
   background: string; //    what icons should sit on
   mood: string[];
   negativeRules: string[];
+  /** B14: what generated PREVIEW SHEETS render on — "transparent" requests a
+   *  transparent PNG from the image model; any other value is treated as an
+   *  opaque color the prompt should honor. Absent → opaque default. */
+  iconBackground?: "transparent" | string;
 };
+
+/** B15: normalized bounding box on the source image (0..1, top-left origin). */
+export type IconSourceBox = { x0: number; y0: number; x1: number; y1: number };
 
 export type IconCandidate = {
   id: string; //        stable "icon_001", "icon_002", …
@@ -179,6 +189,11 @@ export type IconCandidate = {
   rationale: string; // why this icon belongs in the set
   prompt: string; //    per-icon generation prompt (style-grounded)
   status: "active" | "removed";
+  /** B15 (experimental, sourceCrops setting): small data-URL crop of this icon
+   *  cut out of the approved source image (≤256px longest edge). */
+  sourceCrop?: string;
+  /** B15: the normalized box the crop came from (kept for re-crops/debugging). */
+  sourceBox?: IconSourceBox | null;
 };
 
 export type PreviewSheet = {
@@ -216,7 +231,8 @@ export type FableStepKey =
   | "analyze" //              Gemini: style + icon candidates
   | "revise_prompts" //       Gemini: apply ops to candidates
   | "preview_image" //        OpenAI: render preview sheet
-  | "final_icon"; //          OpenAI: render one standalone icon
+  | "final_icon" //           OpenAI: render one standalone icon
+  | "locate_icons"; //        Gemini: bounding boxes for candidates on the source (B15)
 
 export type FableUsageRecord = {
   id: string;
@@ -255,7 +271,29 @@ export type FableEvent =
     }
   | { id: string; at: string; kind: "assistant"; text: string }
   | { id: string; at: string; kind: "decision"; decision: FableDecision; stageBefore: FableStage }
-  | { id: string; at: string; kind: "step"; step: FableStepKey; ok: boolean; detail: string };
+  | {
+      id: string;
+      at: string;
+      kind: "step";
+      step: FableStepKey;
+      ok: boolean;
+      detail: string;
+      /** W3: model that ran this step (display string, may include quality). */
+      model?: string;
+      /** W3: the full prompt actually sent for generation steps. */
+      prompt?: string;
+    };
+
+/** W4: one entry of the Dev-drawer raw I/O ring buffer (scrubbed payloads). */
+export type FableRawLogEntry = {
+  at: string;
+  step: string;
+  request?: unknown;
+  response?: unknown;
+};
+
+/** W4: scrubbed request/response summary a route returns when debug:true. */
+export type FableDebugRaw = { request?: unknown; response?: unknown };
 
 // ---------------------------------------------------------------------------
 // Project — everything saved to IndexedDB
@@ -281,6 +319,10 @@ export type FableProject = {
 
   /** Per-project model + quality selection (defaults to FABLE_MODELS, medium). */
   models: FableModelConfig;
+
+  /** B14: display-only backdrop behind transparent images on sheet/final cards
+   *  ("" / absent → checkerboard). Pure CSS — never affects generation. */
+  viewBackground?: string;
 
   usage: FableUsageRecord[];
   events: FableEvent[];
@@ -357,10 +399,13 @@ export type AgentRequest = {
   state: FableStateSummary;
   /** Analysis model override (catalog id); defaults to FABLE_MODELS.analysis. */
   model?: string;
+  /** W4: when true the route includes a scrubbed debugRaw in its response. */
+  debug?: boolean;
 };
 export type AgentResponse = {
   decision: FableDecision;
   usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
 };
 
 // POST /api/fable/improve-source
@@ -370,12 +415,14 @@ export type ImproveSourceRequest = {
   model?: string; //       analysis model for the brief (catalog id)
   imageModel?: string; //  image model for the render (catalog id)
   quality?: ImageQuality;
+  debug?: boolean;
 };
 export type ImproveSourceResponse = {
   critique: string; //   what Gemini decided to fix
   imagePrompt: string; // the OpenAI prompt used
   imageBase64: string; // the improved source (data URL)
   usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
 };
 
 // POST /api/fable/analyze
@@ -384,12 +431,14 @@ export type AnalyzeStyleRequest = {
   guidance?: string; //   optional user steer, e.g. "more dark-mode SaaS"
   maxIcons?: number; //   defaults to FABLE_LIMITS.maxCandidates
   model?: string; //      analysis model override (catalog id)
+  debug?: boolean;
 };
 export type AnalyzeStyleResponse = {
   style: FableStyle;
   sharedStylePrompt: string;
   candidates: IconCandidate[]; // ids assigned icon_001… in order
   usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
 };
 
 // POST /api/fable/revise-prompts
@@ -399,13 +448,18 @@ export type RevisePromptsRequest = {
   candidates: IconCandidate[];
   ops: FableOp[];
   model?: string; // analysis model override (catalog id)
+  debug?: boolean;
 };
 export type RevisePromptsResponse = {
   /** Full updated candidate list (removed ones get status:"removed"; added ones
    *  get the next free icon_NNN id). */
   candidates: IconCandidate[];
-  sharedStylePrompt: string; // possibly updated by restyle_set
+  sharedStylePrompt: string; // possibly updated by restyle_set / edit_style
+  /** B9/B14: the (possibly patched) style — edit_style / set_background ops
+   *  change palette/mood/iconBackground etc. Unchanged ops echo it back. */
+  style: FableStyle;
   usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
 };
 
 // POST /api/fable/preview-sheet
@@ -416,14 +470,19 @@ export type PreviewSheetRequest = {
   icons: { id: string; name: string; concept: string; prompt: string }[];
   sheetIndex: number;
   instruction?: string; // for "try another sheet" variants
+  /** B14: "transparent" → transparent PNG sheet; any other value → opaque
+   *  sheet on that color; absent → opaque default. */
+  background?: string;
   imageModel?: string; // image model override (catalog id)
   quality?: ImageQuality;
+  debug?: boolean;
 };
 export type PreviewSheetResponse = {
   sheetPrompt: string;
   imageBase64: string; // data URL
   grid: { rows: number; cols: number };
   usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
 };
 
 // POST /api/fable/final-icon
@@ -435,12 +494,32 @@ export type FinalIconRequest = {
    *  3×3 grid" — lets the model REPRODUCE that exact rendering instead of
    *  redrawing from text (which drifts in color/weight). */
   sheetPosition?: string;
+  /** B15: small data-URL crop of this icon from the ORIGINAL source, passed as
+   *  a second reference image (the installed openai SDK's images.edit accepts
+   *  an Uploadable array for gpt-image models). */
+  sourceCropBase64?: string;
   imageModel?: string; // image model override (catalog id)
   quality?: ImageQuality;
+  debug?: boolean;
 };
 export type FinalIconResponse = {
   final: FableFinalIcon;
   usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
+};
+
+// POST /api/fable/locate-icons (B15 — experimental source-icon crops)
+export type LocateIconsRequest = {
+  imageBase64: string; // the approved source
+  candidates: { id: string; name: string; concept: string }[];
+  model?: string; // analysis model override (catalog id)
+  debug?: boolean;
+};
+export type LocateIconsResponse = {
+  /** One entry per requested candidate id; box is null when not visible. */
+  boxes: { id: string; box: IconSourceBox | null }[];
+  usage: FableUsageRecord[];
+  debugRaw?: FableDebugRaw;
 };
 
 // Error payload every route may return: message + any usage accumulated before

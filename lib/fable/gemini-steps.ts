@@ -18,6 +18,7 @@ import {
   buildImproveSourceBrief,
   buildAnalyzeComposer,
   buildReviseComposer,
+  buildLocateIconsPrompt,
 } from "./prompts";
 import {
   FABLE_MODELS,
@@ -31,6 +32,7 @@ import type {
   FableDecision,
   FableStyle,
   IconCandidate,
+  IconSourceBox,
   FableOp,
 } from "./types";
 
@@ -645,9 +647,51 @@ export async function analyzeStyle(args: {
 // revisePrompts — Gemini → updated candidates + possibly new sharedStylePrompt
 // ---------------------------------------------------------------------------
 
+const reviseStyleSchema = {
+  type: Type.OBJECT,
+  properties: {
+    styleName: { type: Type.STRING },
+    summary: { type: Type.STRING },
+    colorPalette: { type: Type.ARRAY, items: { type: Type.STRING } },
+    lineStyle: { type: Type.STRING },
+    shapeLanguage: { type: Type.STRING },
+    lighting: { type: Type.STRING },
+    background: { type: Type.STRING },
+    mood: { type: Type.ARRAY, items: { type: Type.STRING } },
+    negativeRules: { type: Type.ARRAY, items: { type: Type.STRING } },
+    // "" when unset; "transparent" or a color when set (B14).
+    iconBackground: { type: Type.STRING },
+  },
+  required: [
+    "styleName",
+    "summary",
+    "colorPalette",
+    "lineStyle",
+    "shapeLanguage",
+    "lighting",
+    "background",
+    "mood",
+    "negativeRules",
+    "iconBackground",
+  ],
+  propertyOrdering: [
+    "styleName",
+    "summary",
+    "colorPalette",
+    "lineStyle",
+    "shapeLanguage",
+    "lighting",
+    "background",
+    "mood",
+    "negativeRules",
+    "iconBackground",
+  ],
+};
+
 const revisePromptsSchema = {
   type: Type.OBJECT,
   properties: {
+    style: reviseStyleSchema,
     sharedStylePrompt: { type: Type.STRING },
     candidates: {
       type: Type.ARRAY,
@@ -666,11 +710,23 @@ const revisePromptsSchema = {
       },
     },
   },
-  required: ["sharedStylePrompt", "candidates"],
-  propertyOrdering: ["sharedStylePrompt", "candidates"],
+  required: ["style", "sharedStylePrompt", "candidates"],
+  propertyOrdering: ["style", "sharedStylePrompt", "candidates"],
 };
 
 const RevisePromptsOutputSchema = z.object({
+  style: z.object({
+    styleName: z.string(),
+    summary: z.string(),
+    colorPalette: z.array(z.string()),
+    lineStyle: z.string(),
+    shapeLanguage: z.string(),
+    lighting: z.string(),
+    background: z.string(),
+    mood: z.array(z.string()),
+    negativeRules: z.array(z.string()),
+    iconBackground: z.string().optional(),
+  }),
   sharedStylePrompt: z.string(),
   candidates: z.array(
     z.object({
@@ -693,6 +749,7 @@ export async function revisePrompts(args: {
 }): Promise<{
   candidates: IconCandidate[];
   sharedStylePrompt: string;
+  style: FableStyle;
   usage: FableUsageRecord[];
 }> {
   const ai = getGeminiClient();
@@ -828,9 +885,177 @@ export async function revisePrompts(args: {
     return { ...c, status: c.status };
   });
 
+  // Style reconciliation: the model echoes/patches the style; iconBackground ""
+  // means "unset". set_background ops are ALSO enforced deterministically in
+  // code — the user's explicit value must win over any model paraphrase.
+  const rawIconBg = valid.data.style.iconBackground?.trim() ?? "";
+  let style: FableStyle = {
+    ...valid.data.style,
+    iconBackground: rawIconBg || args.style.iconBackground,
+  };
+  for (const op of args.ops) {
+    if (op.op === "set_background" && op.instruction?.trim()) {
+      const v = op.instruction.trim();
+      style = { ...style, iconBackground: v.toLowerCase() === "transparent" ? "transparent" : v };
+    }
+  }
+  if (!style.iconBackground) delete style.iconBackground;
+
   return {
     candidates: reconciled,
     sharedStylePrompt: valid.data.sharedStylePrompt,
+    style,
     usage: [usageRecord],
   };
+}
+
+// ---------------------------------------------------------------------------
+// locateIcons — Gemini vision → normalized bounding box per candidate (B15)
+// ONE call for ALL candidates; free-tier $0, tokens still recorded.
+// ---------------------------------------------------------------------------
+
+const locateIconsSchema = {
+  type: Type.OBJECT,
+  properties: {
+    boxes: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING },
+          found: { type: Type.BOOLEAN },
+          x0: { type: Type.NUMBER },
+          y0: { type: Type.NUMBER },
+          x1: { type: Type.NUMBER },
+          y1: { type: Type.NUMBER },
+        },
+        required: ["id", "found", "x0", "y0", "x1", "y1"],
+        propertyOrdering: ["id", "found", "x0", "y0", "x1", "y1"],
+      },
+    },
+  },
+  required: ["boxes"],
+  propertyOrdering: ["boxes"],
+};
+
+const LocateIconsOutputSchema = z.object({
+  boxes: z.array(
+    z.object({
+      id: z.string(),
+      found: z.boolean(),
+      x0: z.number(),
+      y0: z.number(),
+      x1: z.number(),
+      y1: z.number(),
+    }),
+  ),
+});
+
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+export async function locateIcons(args: {
+  imageBase64: string;
+  candidates: { id: string; name: string; concept: string }[];
+  model?: string;
+}): Promise<{
+  boxes: { id: string; box: IconSourceBox | null }[];
+  usage: FableUsageRecord[];
+}> {
+  const ai = getGeminiClient();
+  const model = args.model ?? FABLE_MODELS.analysis;
+  const start = Date.now();
+  const prompt = buildLocateIconsPrompt(args.candidates);
+  const promptPreview = previewOf(prompt);
+  const { mimeType, data } = splitDataUrl(args.imageBase64);
+
+  const failRecord = (error: string, tokens?: { in?: number; out?: number }) =>
+    geminiUsageRecord({
+      step: "locate_icons",
+      model,
+      inputType: "image+text",
+      outputType: "json",
+      inputTokens: tokens?.in ?? 0,
+      outputTokens: tokens?.out ?? 0,
+      durationMs: Date.now() - start,
+      ok: false,
+      error,
+      promptPreview,
+    });
+
+  let res;
+  try {
+    res = await ai.models.generateContent({
+      model,
+      contents: [
+        {
+          role: "user",
+          parts: [{ inlineData: { mimeType, data } }, { text: prompt }],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: locateIconsSchema,
+        temperature: 0,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gemini request failed.";
+    throw new FableError("locate_icons", message, [failRecord(message)], err);
+  }
+
+  const meta = res.usageMetadata;
+  const tokens = { in: meta?.promptTokenCount ?? 0, out: meta?.candidatesTokenCount ?? 0 };
+
+  const raw = res.text;
+  if (!raw) {
+    throw new FableError("locate_icons", "Icon locator returned empty.", [
+      failRecord("Empty response.", tokens),
+    ]);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new FableError("locate_icons", `Icon locator non-JSON response: ${raw.slice(0, 200)}`, [
+      failRecord(`Non-JSON: ${raw.slice(0, 100)}`, tokens),
+    ]);
+  }
+
+  const valid = LocateIconsOutputSchema.safeParse(parsed);
+  if (!valid.success) {
+    const msg = valid.error.issues[0]?.message ?? "bad shape";
+    throw new FableError("locate_icons", `Icon locator validation failed: ${msg}`, [
+      failRecord(`Validation: ${msg}`, tokens),
+    ]);
+  }
+
+  const usageRecord = geminiUsageRecord({
+    step: "locate_icons",
+    model,
+    inputType: "image+text",
+    outputType: "json",
+    inputTokens: tokens.in,
+    outputTokens: tokens.out,
+    durationMs: Date.now() - start,
+    ok: true,
+    promptPreview,
+  });
+
+  // Reconcile against the REQUESTED candidate list: exactly one entry per
+  // requested id; degenerate or not-found boxes become null.
+  const byId = new Map(valid.data.boxes.map((b) => [b.id, b]));
+  const boxes = args.candidates.map((c) => {
+    const hit = byId.get(c.id);
+    if (!hit || !hit.found) return { id: c.id, box: null };
+    const x0 = clamp01(Math.min(hit.x0, hit.x1));
+    const x1 = clamp01(Math.max(hit.x0, hit.x1));
+    const y0 = clamp01(Math.min(hit.y0, hit.y1));
+    const y1 = clamp01(Math.max(hit.y0, hit.y1));
+    // Reject boxes too small to be a real icon (sub-1% of either dimension).
+    if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return { id: c.id, box: null };
+    return { id: c.id, box: { x0, y0, x1, y1 } };
+  });
+
+  return { boxes, usage: [usageRecord] };
 }

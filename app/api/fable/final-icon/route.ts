@@ -1,6 +1,7 @@
 import { FinalIconRequestSchema } from "@/lib/fable/schemas";
 import { renderFinalIcon } from "@/lib/fable/openai-steps";
 import { buildFinalIconWrapper } from "@/lib/fable/prompts";
+import { buildDebugRaw } from "@/lib/fable/debug";
 import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { FABLE_MODELS } from "@/lib/fable/types";
 import type { FableFinalIcon } from "@/lib/fable/types";
@@ -21,8 +22,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const { referenceImageBase64, sharedStylePrompt, icon, sheetPosition, imageModel, quality } =
-    parsed.data;
+  const {
+    referenceImageBase64,
+    sharedStylePrompt,
+    icon,
+    sheetPosition,
+    sourceCropBase64,
+    imageModel,
+    quality,
+    debug,
+  } = parsed.data;
 
   // Assemble the wrapped prompt in code — no model call needed.
   const wrappedPrompt = buildFinalIconWrapper({
@@ -31,12 +40,14 @@ export async function POST(request: Request) {
     concept: icon.concept,
     prompt: icon.prompt,
     sheetPosition,
+    hasSourceCrop: !!sourceCropBase64,
   });
 
   try {
     const { imageBase64, usage } = await renderFinalIcon({
       referenceImageBase64,
       wrappedPrompt,
+      sourceCropBase64,
       model: imageModel,
       quality,
     });
@@ -53,7 +64,10 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    return Response.json({ final, usage });
+    const payload = { final, usage };
+    return Response.json(
+      debug ? { ...payload, debugRaw: buildDebugRaw(parsed.data, payload) } : payload,
+    );
   } catch (err) {
     console.error("[fable/final-icon]", err);
     if (err instanceof FableError) {

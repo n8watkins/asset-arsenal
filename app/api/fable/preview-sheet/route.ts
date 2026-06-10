@@ -3,6 +3,7 @@ import { renderPreviewSheet } from "@/lib/fable/openai-steps";
 import { buildPreviewSheetPrompt } from "@/lib/fable/prompts";
 import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { gridFor } from "@/lib/fable/types";
+import { buildDebugRaw } from "@/lib/fable/debug";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -20,23 +21,45 @@ export async function POST(request: Request) {
     );
   }
 
-  const { referenceImageBase64, style, sharedStylePrompt, icons, instruction, imageModel, quality } =
-    parsed.data;
+  const {
+    referenceImageBase64,
+    style,
+    sharedStylePrompt,
+    icons,
+    instruction,
+    background,
+    imageModel,
+    quality,
+    debug,
+  } = parsed.data;
 
   // Grid shape is derived from icon count — deterministic, no model needed.
   const grid = gridFor(icons.length);
 
   // Sheet prompt is assembled in code (deterministic — no Gemini call for this step).
-  const sheetPrompt = buildPreviewSheetPrompt({ style, sharedStylePrompt, icons, grid, instruction });
+  // B14: explicit request param wins; else the style's own iconBackground.
+  const effectiveBackground = background ?? style.iconBackground;
+  const sheetPrompt = buildPreviewSheetPrompt({
+    style,
+    sharedStylePrompt,
+    icons,
+    grid,
+    instruction,
+    background: effectiveBackground,
+  });
 
   try {
     const { imageBase64, usage } = await renderPreviewSheet({
       referenceImageBase64,
       sheetPrompt,
+      background: effectiveBackground,
       model: imageModel,
       quality,
     });
-    return Response.json({ sheetPrompt, imageBase64, grid, usage });
+    const payload = { sheetPrompt, imageBase64, grid, usage };
+    return Response.json(
+      debug ? { ...payload, debugRaw: buildDebugRaw(parsed.data, payload) } : payload,
+    );
   } catch (err) {
     console.error("[fable/preview-sheet]", err);
     if (err instanceof FableError) {

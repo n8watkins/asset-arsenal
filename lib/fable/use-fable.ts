@@ -24,6 +24,7 @@ import {
   postAnalyze,
   postFinalIcon,
   postImproveSource,
+  postLocateIcons,
   postPreviewSheet,
   postRevisePrompts,
 } from "./client-api";
@@ -33,20 +34,25 @@ import {
   DEFAULT_FABLE_MODEL_CONFIG,
   FABLE_LIMITS,
   summarizeProject,
+  type FableDebugRaw,
   type FableDecision,
   type FableEvent,
   type FableFinalIcon,
   type FableModelConfig,
   type FableOp,
   type FableProject,
+  type FableRawLogEntry,
   type FableSourceImage,
   type FableStepKey,
+  type FableStyle,
   type FableUsageRecord,
   type IconCandidate,
   type PreviewSheet,
 } from "./types";
-import { saveProject } from "./store";
+import { listProjects, saveProject } from "./store";
 import { getFableSettings } from "./settings";
+import { archiveImage } from "./gallery-sync";
+import { cropFromDataUrl } from "./crops";
 import { IMAGE_UPLOAD_LIMITS, MAX_FILE_SIZE_BYTES } from "@/lib/icon/models";
 import { imageCostUSD } from "@/lib/icon/model-reference";
 import { logUsage } from "@/lib/icon/usage-log";
@@ -178,6 +184,9 @@ export type UseFable = {
   pendingDecision: PendingDecision | null;
   /** Most recent raw error payload a route returned (for the Dev drawer). */
   lastRawError: FableLastRawError | null;
+  /** W4: ring buffer (last 20) of scrubbed request/response pairs the routes
+   *  returned while devMode was on (debug:true). */
+  rawLog: FableRawLogEntry[];
 
   setDevMode: (on: boolean) => void;
   clearError: () => void;
@@ -202,6 +211,12 @@ export type UseFable = {
   regenerateSheet: (sheetId: string, instruction: string) => Promise<void>;
   removeCandidate: (id: string) => void;
   updateCandidate: (id: string, patch: Partial<IconCandidate>) => void;
+  /** B10: explicit blueprint style edit (BlueprintCard ✎ Edit → Save). */
+  updateStyle: (patch: Partial<FableStyle>) => void;
+  /** B14: display-only backdrop behind transparent images (persisted). */
+  setViewBackground: (bg: string) => void;
+  /** B15: manual "Find on source" — one Gemini locate call + client crops. */
+  locateSourceCrops: () => Promise<void>;
 
   // Mechanical card actions — structured executors, NO agent round-trip.
   reviseIconsDirect: (ops: FableOp[], description: string) => Promise<void>;
@@ -220,6 +235,24 @@ export function useFable(): UseFable {
   const [devMode, setDevMode] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<PendingDecision | null>(null);
   const [lastRawError, setLastRawError] = useState<FableLastRawError | null>(null);
+  const [rawLog, setRawLog] = useState<FableRawLogEntry[]>([]);
+
+  // devMode mirrored in a ref so async executors read the CURRENT value when
+  // deciding whether to request debugRaw from the routes (W4).
+  const devModeRef = useRef(devMode);
+  devModeRef.current = devMode;
+
+  /** True → routes should include scrubbed raw I/O in their responses. */
+  const wantDebug = useCallback(() => devModeRef.current || undefined, []);
+
+  /** W4: push one scrubbed request/response pair onto the ring buffer (≤20). */
+  const pushRaw = useCallback((step: string, debugRaw?: FableDebugRaw) => {
+    if (!debugRaw) return;
+    setRawLog((prev) => [
+      ...prev.slice(-19),
+      { at: now(), step, request: debugRaw.request, response: debugRaw.response },
+    ]);
+  }, []);
 
   // A ref mirror of the latest project so async executors read fresh state
   // without stale closures, and so we never lose intermediate mutations.
@@ -335,6 +368,9 @@ export function useFable(): UseFable {
             bench: "fable",
             provider: u.provider,
             projectId: pid,
+            // W2: human project name at log time (only when `pid` is still on
+            // screen — projectRef would otherwise name the WRONG project).
+            projectName: projectRef.current.id === pid ? projectRef.current.name : undefined,
             durationMs: u.durationMs,
           });
         } catch {
@@ -347,11 +383,35 @@ export function useFable(): UseFable {
   );
 
   const appendStep = useCallback(
-    (pid: string, step: FableStepKey, ok: boolean, detail: string) => {
-      appendEvent(pid, { kind: "step", step, ok, detail });
+    (
+      pid: string,
+      step: FableStepKey,
+      ok: boolean,
+      detail: string,
+      // W3: model + full prompt for generation steps (Live's expandable row).
+      extra?: { model?: string; prompt?: string },
+    ) => {
+      appendEvent(pid, { kind: "step", step, ok, detail, ...extra });
     },
     [appendEvent],
   );
+
+  // B16: dedupe a proposed title against the saved projects' names (excluding
+  // this project) — "Name", "Name (2)", "Name (3)", …
+  const dedupeTitle = useCallback(async (name: string, selfId: string): Promise<string> => {
+    try {
+      const taken = new Set(
+        (await listProjects()).filter((p) => p.id !== selfId).map((p) => p.name),
+      );
+      if (!taken.has(name)) return name;
+      for (let i = 2; ; i++) {
+        const candidate = `${name} (${i})`;
+        if (!taken.has(candidate)) return candidate;
+      }
+    } catch {
+      return name; // store unavailable — collision is the lesser evil
+    }
+  }, []);
 
   /** Harvest what a failed call still produced: usage records (→ project ledger
    *  + global ledger) and the raw error payload (→ Dev drawer). */
@@ -426,7 +486,9 @@ export function useFable(): UseFable {
         model: models.analysis,
         imageModel: models.image,
         quality: models.quality,
+        debug: wantDebug(),
       });
+      pushRaw("improve_source_image", res.debugRaw);
       appendUsage(pid, res.usage);
       const improved: FableSourceImage = {
         id: uid(),
@@ -441,10 +503,81 @@ export function useFable(): UseFable {
         improved: [...p.improved, improved],
         stage: "source_review",
       }));
-      appendStep(pid, "improve_source_image", true, "Improved source ready.");
+      appendStep(pid, "improve_source_image", true, "Improved source ready.", {
+        model: `${models.image} · ${models.quality}`,
+        prompt: res.imagePrompt,
+      });
+      // W1: every generated image lands in the global gallery (fire-and-forget).
+      void archiveImage({
+        dataUrl: res.imageBase64,
+        name: "improved source",
+        bench: "fable",
+        projectId: pid,
+        projectName: projectRef.current.name,
+        step: "improve_source_image",
+        category: "elevated",
+        prompt: res.imagePrompt,
+      });
       if (next) void saveProject(projectRef.current); // flush — pixels are precious
     },
-    [appendStep, appendUsage, mutateFor, setBusyFor],
+    [appendStep, appendUsage, mutateFor, pushRaw, setBusyFor, wantDebug],
+  );
+
+  // ---- B15: locate candidate icons on the source + crop them client-side ----
+  // ONE Gemini vision call for ALL candidates, then free canvas crops. NEVER
+  // throws and never touches `busy` — failures surface only as dev step events
+  // (the feature is experimental and must not interrupt the flow).
+  const runLocateIcons = useCallback(
+    async (pid: string): Promise<void> => {
+      try {
+        const p0 = projectRef.current;
+        if (!isCurrent(pid)) return;
+        const src = approvedSource(p0);
+        const active = p0.candidates.filter((c) => c.status === "active");
+        if (!src || active.length === 0) return;
+
+        const res = await postLocateIcons({
+          imageBase64: src.imageUrl,
+          candidates: active.map((c) => ({ id: c.id, name: c.name, concept: c.concept })),
+          model: p0.models.analysis,
+          debug: wantDebug(),
+        });
+        pushRaw("locate_icons", res.debugRaw);
+        appendUsage(pid, res.usage);
+
+        // Crop every found box (free, client-side canvas, ≤256px longest edge).
+        const crops = new Map<string, { crop: string | null; box: typeof res.boxes[number]["box"] }>();
+        for (const { id, box } of res.boxes) {
+          if (!box) {
+            crops.set(id, { crop: null, box: null });
+            continue;
+          }
+          crops.set(id, { crop: await cropFromDataUrl(src.imageUrl, box), box });
+        }
+
+        mutateFor(pid, (p) => ({
+          ...p,
+          candidates: p.candidates.map((c) => {
+            const hit = crops.get(c.id);
+            if (!hit) return c;
+            return { ...c, sourceCrop: hit.crop ?? undefined, sourceBox: hit.box };
+          }),
+        }));
+        const found = [...crops.values()].filter((v) => v.crop).length;
+        appendStep(
+          pid,
+          "locate_icons",
+          true,
+          `Found ${found} of ${active.length} icons on the source.`,
+        );
+      } catch (err) {
+        // Silent by design: a dev-mode step event + raw error, nothing else.
+        noteFailure(pid, err);
+        const message = err instanceof Error ? err.message : String(err);
+        appendStep(pid, "locate_icons", false, message);
+      }
+    },
+    [appendStep, appendUsage, isCurrent, mutateFor, noteFailure, pushRaw, wantDebug],
   );
 
   const runAnalyzeInternal = useCallback(
@@ -457,7 +590,9 @@ export function useFable(): UseFable {
         imageBase64: src.imageUrl,
         guidance: guidance || undefined,
         model: p0.models.analysis,
+        debug: wantDebug(),
       });
+      pushRaw("analyze", res.debugRaw);
       appendUsage(pid, res.usage);
       mutateFor(pid, (p) => ({
         ...p,
@@ -471,14 +606,24 @@ export function useFable(): UseFable {
         "analyze",
         true,
         `Blueprint ready — ${res.candidates.filter((c) => c.status === "active").length} candidates.`,
+        // W3: the full analyze prompt lives server-side; the ledger's preview
+        // (~300 chars) is the closest record of what was actually sent.
+        { model: p0.models.analysis, prompt: res.usage[0]?.promptPreview },
       );
-      // Title fallback: still untitled after analyze → use the style name.
+      // Title fallback: still untitled after analyze → use the style name
+      // (deduped against existing project names, B16).
       const styleName = res.style.styleName.trim();
       if (styleName && isCurrent(pid) && projectRef.current.name === "Untitled project") {
-        mutateFor(pid, (p) => ({ ...p, name: styleName }));
+        const unique = await dedupeTitle(styleName, pid);
+        if (isCurrent(pid) && projectRef.current.name === "Untitled project") {
+          mutateFor(pid, (p) => ({ ...p, name: unique }));
+        }
       }
+      // B15 (experimental, settings-gated): locate the candidates on the source
+      // and crop thumbnails — non-blocking; failures are silent dev events.
+      if (getFableSettings().sourceCrops) void runLocateIcons(pid);
     },
-    [appendStep, appendUsage, isCurrent, mutateFor, setBusyFor],
+    [appendStep, appendUsage, dedupeTitle, isCurrent, mutateFor, pushRaw, runLocateIcons, setBusyFor, wantDebug],
   );
 
   const generatePreviews = useCallback(
@@ -517,9 +662,12 @@ export function useFable(): UseFable {
             prompt: c.prompt,
           })),
           sheetIndex,
+          background: style.iconBackground, // B14
           imageModel: models.image,
           quality: models.quality,
+          debug: wantDebug(),
         });
+        pushRaw("preview_image", res.debugRaw);
         appendUsage(pid, res.usage);
         const sheet: PreviewSheet = {
           id: uid(),
@@ -532,12 +680,27 @@ export function useFable(): UseFable {
           createdAt: now(),
         };
         const next = mutateFor(pid, (p) => ({ ...p, sheets: [...p.sheets, sheet] }));
-        appendStep(pid, "preview_image", true, `Preview sheet ${sheetIndex} ready.`);
+        appendStep(pid, "preview_image", true, `Preview sheet ${sheetIndex} ready.`, {
+          model: `${models.image} · ${models.quality}`,
+          prompt: res.sheetPrompt,
+        });
+        // W1: sheets are archived ONCE, on creation (superseded sheets stay in
+        // project state, so no extra archive is needed when they retire).
+        void archiveImage({
+          dataUrl: res.imageBase64,
+          name: `sheet ${sheetIndex}`,
+          bench: "fable",
+          projectId: pid,
+          projectName: projectRef.current.name,
+          step: "preview_image",
+          category: "icon-collection",
+          prompt: res.sheetPrompt,
+        });
         if (next) void saveProject(projectRef.current); // flush — pixels are precious
       }
       mutateFor(pid, (p) => ({ ...p, stage: "preview_review" }));
     },
-    [appendStep, appendUsage, isCurrent, mutateFor, setBusyFor],
+    [appendStep, appendUsage, isCurrent, mutateFor, pushRaw, setBusyFor, wantDebug],
   );
 
   const generateSingleSheet = useCallback(
@@ -562,9 +725,12 @@ export function useFable(): UseFable {
         })),
         sheetIndex,
         instruction: instruction || undefined,
+        background: p0.style.iconBackground, // B14
         imageModel: models.image,
         quality: models.quality,
+        debug: wantDebug(),
       });
+      pushRaw("preview_image", res.debugRaw);
       appendUsage(pid, res.usage);
       const sheet: PreviewSheet = {
         id: uid(),
@@ -581,10 +747,24 @@ export function useFable(): UseFable {
         sheets: [...p.sheets, sheet],
         stage: "preview_review",
       }));
-      appendStep(pid, "preview_image", true, `Sheet ${sheetIndex} ready.`);
+      appendStep(pid, "preview_image", true, `Sheet ${sheetIndex} ready.`, {
+        model: `${models.image} · ${models.quality}`,
+        prompt: res.sheetPrompt,
+      });
+      // W1: archive on creation (see generatePreviews).
+      void archiveImage({
+        dataUrl: res.imageBase64,
+        name: `sheet ${sheetIndex}`,
+        bench: "fable",
+        projectId: pid,
+        projectName: projectRef.current.name,
+        step: "preview_image",
+        category: "icon-collection",
+        prompt: res.sheetPrompt,
+      });
       if (next) void saveProject(projectRef.current); // flush — pixels are precious
     },
-    [appendStep, appendUsage, mutateFor, setBusyFor],
+    [appendStep, appendUsage, mutateFor, pushRaw, setBusyFor, wantDebug],
   );
 
   // Run final-icon generation for a set of candidate ids with bounded concurrency.
@@ -596,6 +776,27 @@ export function useFable(): UseFable {
       const sharedStylePrompt = p0.sharedStylePrompt ?? "";
       const fallbackSheet = approvedSheets[0] ?? null;
       const { models } = p0;
+
+      // W1 (CRITICAL): a regeneration replaces the existing final — archive the
+      // OUTGOING version to the gallery BEFORE the placeholder overwrites it,
+      // so history is never lost. (New successes are also archived below; this
+      // belt-and-braces pre-archive guarantees the invariant even if that
+      // creation-time archive failed.)
+      for (const iconId of iconIds) {
+        const prev = p0.finals.find((f) => f.iconId === iconId);
+        if (prev?.status === "success" && prev.imageUrl) {
+          void archiveImage({
+            dataUrl: prev.imageUrl,
+            name: prev.name,
+            bench: "fable",
+            projectId: pid,
+            projectName: p0.name,
+            step: "final_icon",
+            category: "icon",
+            prompt: prev.prompt,
+          });
+        }
+      }
 
       // Seed pending placeholders (or reset existing finals for these ids).
       mutateFor(pid, (p) => {
@@ -660,9 +861,15 @@ export function useFable(): UseFable {
               prompt: cand.prompt,
             },
             sheetPosition,
+            // B15: the source crop rides along as a SECOND reference image
+            // (the installed openai SDK accepts an Uploadable array).
+            sourceCropBase64:
+              getFableSettings().sourceCrops && cand.sourceCrop ? cand.sourceCrop : undefined,
             imageModel: models.image,
             quality: models.quality,
+            debug: wantDebug(),
           });
+          pushRaw("final_icon", res.debugRaw);
           appendUsage(pid, res.usage);
           const next = mutateFor(pid, (p) => ({
             ...p,
@@ -673,7 +880,23 @@ export function useFable(): UseFable {
           // Generated pixels are precious — flush to IndexedDB immediately
           // rather than waiting out the debounce (a reload could lose them).
           if (next) void saveProject(projectRef.current);
-          appendStep(pid, "final_icon", res.final.status === "success", `${cand.name}: ${res.final.status}.`);
+          appendStep(pid, "final_icon", res.final.status === "success", `${cand.name}: ${res.final.status}.`, {
+            model: `${models.image} · ${models.quality}`,
+            prompt: res.final.prompt,
+          });
+          // W1: archive every successful final on creation.
+          if (res.final.status === "success" && res.final.imageUrl) {
+            void archiveImage({
+              dataUrl: res.final.imageUrl,
+              name: cand.name,
+              bench: "fable",
+              projectId: pid,
+              projectName: projectRef.current.name,
+              step: "final_icon",
+              category: "icon",
+              prompt: res.final.prompt,
+            });
+          }
         } catch (err) {
           noteFailure(pid, err);
           const message = err instanceof Error ? err.message : String(err);
@@ -710,7 +933,7 @@ export function useFable(): UseFable {
         pump();
       });
     },
-    [appendStep, appendUsage, isCurrent, mutateFor, noteFailure, setBusyFor],
+    [appendStep, appendUsage, isCurrent, mutateFor, noteFailure, pushRaw, setBusyFor, wantDebug],
   );
 
   // ---- one-shot tamers (C19) ----------------------------------------------
@@ -737,9 +960,14 @@ export function useFable(): UseFable {
           ops: [],
         },
         text: userText,
+        // Direct executor: the generate_previews intent itself now routes
+        // through this confirm gate, so confirming must NOT re-enter it.
+        run: async (pid2) => {
+          await generatePreviews(pid2);
+        },
       });
     },
-    [appendEvent, isCurrent],
+    [appendEvent, generatePreviews, isCurrent],
   );
 
   // ---- decision execution -------------------------------------------------
@@ -762,9 +990,11 @@ export function useFable(): UseFable {
       // (a) prompt-affecting ops → revise-prompts FIRST, so any regeneration
       // below picks up the rewritten prompts. A regenerate_icon carrying an
       // instruction is an edit in disguise — the server treats it as one.
+      // edit_style / set_background (B9/B14) also go here: the route patches
+      // the style object and regenerates the sharedStylePrompt.
       const promptOps = [
         ...ops.filter((o) =>
-          ["edit_icon", "remove_icon", "add_icon", "restyle_set"].includes(o.op),
+          ["edit_icon", "remove_icon", "add_icon", "restyle_set", "edit_style", "set_background"].includes(o.op),
         ),
         ...regenOps.filter((o) => o.instruction?.trim()),
       ];
@@ -778,17 +1008,29 @@ export function useFable(): UseFable {
         const res = await postRevisePrompts({
           style: cur.style,
           sharedStylePrompt: cur.sharedStylePrompt,
-          candidates: cur.candidates,
+          // B15: crops are client-side artifacts — strip them from the payload
+          // (they'd bloat the request and the model never sees them anyway).
+          candidates: cur.candidates.map(({ sourceCrop: _c, sourceBox: _b, ...rest }) => rest),
           ops: promptOps,
           model: cur.models.analysis,
+          debug: wantDebug(),
         });
+        pushRaw("revise_prompts", res.debugRaw);
         appendUsage(pid, res.usage);
+        // Re-attach the crops the model round-trip dropped (matched by id).
+        const cropsById = new Map(
+          cur.candidates.map((c) => [c.id, { sourceCrop: c.sourceCrop, sourceBox: c.sourceBox }]),
+        );
         mutateFor(pid, (p) => ({
           ...p,
-          candidates: res.candidates,
+          candidates: res.candidates.map((c) => ({ ...c, ...cropsById.get(c.id) })),
           sharedStylePrompt: res.sharedStylePrompt,
+          style: res.style, // B9/B14: edit_style / set_background patched it
         }));
-        appendStep(pid, "revise_prompts", true, "Icon set updated.");
+        appendStep(pid, "revise_prompts", true, "Icon set updated.", {
+          model: cur.models.analysis,
+          prompt: res.usage[0]?.promptPreview,
+        });
         revised = true;
       }
 
@@ -923,7 +1165,27 @@ export function useFable(): UseFable {
           improved: [...p.improved, turnSource!],
         }));
         p0 = next ?? p0;
+        // W1: adopted mid-project uploads are user images → gallery "source".
+        void archiveImage({
+          dataUrl: turnSource.imageUrl,
+          name: "attached source",
+          bench: "fable",
+          projectId: pid,
+          projectName: p0.name,
+          step: "upload",
+          category: "source",
+        });
       }
+
+      // B9: after analyze the blueprint is a CONVERSATION, not a gate — invite
+      // edits instead of queueing a render confirm. Rendering happens when the
+      // user asks (generate_previews intent / chips), still cost-confirmed.
+      const inviteBlueprintEdits = () => {
+        appendEvent(pid, {
+          kind: "assistant",
+          text: "Review the blueprint — want to tweak the palette, icons, or style before we render previews? Just tell me (e.g. “warmer palette”, “drop the bell icon”), or say “render previews” when you’re ready.",
+        });
+      };
 
       switch (decision.intent) {
         case "upgrade_source": {
@@ -938,7 +1200,7 @@ export function useFable(): UseFable {
           mutateFor(pid, (p) => ({ ...p, approvedSourceId: src.id }));
           await runAnalyzeInternal(pid, userText);
           if (/\b(preview|sheets?|render)\b/i.test(userText)) await generatePreviews(pid);
-          else queuePreviewConfirm(pid, userText, "Blueprint's ready — review the icon set above.");
+          else inviteBlueprintEdits();
           break;
         }
         case "revise_source": {
@@ -953,13 +1215,19 @@ export function useFable(): UseFable {
           mutateFor(pid, (p) => ({ ...p, approvedSourceId: latest.id }));
           await runAnalyzeInternal(pid, userText);
           if (/\b(preview|sheets?|render)\b/i.test(userText)) await generatePreviews(pid);
-          else queuePreviewConfirm(pid, userText, "Blueprint's ready — review the icon set above.");
+          else inviteBlueprintEdits();
           break;
         }
         case "extract_style": {
           await runAnalyzeInternal(pid, userText);
           if (/\b(preview|sheets?|render)\b/i.test(userText)) await generatePreviews(pid);
-          else queuePreviewConfirm(pid, userText, "Blueprint's ready — review the icon set above.");
+          else inviteBlueprintEdits();
+          break;
+        }
+        case "edit_blueprint": {
+          // B9: style-patching ops (edit_style / set_background) ride the same
+          // revise pipeline — it updates style + sharedStylePrompt + prompts.
+          await executeReviseIcons(pid, decision.ops, userText);
           break;
         }
         case "revise_icons": {
@@ -967,7 +1235,9 @@ export function useFable(): UseFable {
           break;
         }
         case "generate_previews": {
-          await generatePreviews(pid);
+          // C19/B9: rendering N sheets is a paid cascade — confirm with a cost
+          // estimate; the pendingDecision carries a direct run() executor.
+          queuePreviewConfirm(pid, userText, "Ready to render.");
           break;
         }
         case "generate_finals": {
@@ -996,6 +1266,7 @@ export function useFable(): UseFable {
       }
     },
     [
+      appendEvent,
       executeReviseIcons,
       generateFinalsFor,
       generatePreviews,
@@ -1067,6 +1338,16 @@ export function useFable(): UseFable {
           createdAt: now(),
         };
         mutateFor(pid, (p) => ({ ...p, original }));
+        // W1: the user's upload lands in the global gallery as a source.
+        void archiveImage({
+          dataUrl: imageDataUrl,
+          name: imageFile?.name ?? "original source",
+          bench: "fable",
+          projectId: pid,
+          projectName: projectRef.current.name,
+          step: "upload",
+          category: "source",
+        });
       }
       // A second (or later) image rode this turn — the agent + executor adopt it.
       const newImageThisTurn = !!imageDataUrl && hadOriginal;
@@ -1086,7 +1367,9 @@ export function useFable(): UseFable {
           imageBase64: imageDataUrl,
           state: { ...summarizeProject(projectRef.current), newImageThisTurn },
           model: projectRef.current.models.analysis,
+          debug: wantDebug(),
         });
+        pushRaw("agent_route", res.debugRaw);
         appendUsage(pid, res.usage);
         appendStep(pid, "agent_route", true, `Intent: ${res.decision.intent}.`);
         decision = res.decision;
@@ -1102,9 +1385,13 @@ export function useFable(): UseFable {
       if (!isCurrent(pid)) return; // switched chats while routing
 
       // AI chat title — only while still untitled (a manual rename always wins).
+      // B16: deduped against existing project names ("Name (2)", "Name (3)"…).
       const suggested = decision.suggestedTitle?.trim();
       if (suggested && projectRef.current.name === "Untitled project") {
-        mutateFor(pid, (p) => ({ ...p, name: suggested.slice(0, 60) }));
+        const unique = await dedupeTitle(suggested.slice(0, 60), pid);
+        if (isCurrent(pid) && projectRef.current.name === "Untitled project") {
+          mutateFor(pid, (p) => ({ ...p, name: unique }));
+        }
       }
 
       // Low confidence / clarify → confirm before auto-executing.
@@ -1150,12 +1437,15 @@ export function useFable(): UseFable {
       appendEvent,
       appendStep,
       appendUsage,
+      dedupeTitle,
       isCurrent,
       mutateFor,
       noteFailure,
+      pushRaw,
       runDecisionFlow,
       setBusyAll,
       setBusyFor,
+      wantDebug,
     ],
   );
 
@@ -1210,9 +1500,15 @@ export function useFable(): UseFable {
         if (!latest) throw new Error("No source to approve.");
         mutateFor(pid, (p) => ({ ...p, approvedSourceId: latest.id }));
         await runAnalyzeInternal(pid);
-        await generatePreviews(pid);
+        // B9: the blueprint is a conversation, not a gate — stop here and
+        // invite edits; previews render when the user asks (chip / message /
+        // the BlueprintCard button).
+        appendEvent(pid, {
+          kind: "assistant",
+          text: "Review the blueprint — want to tweak the palette, icons, or style before we render previews? Just tell me, or hit “Generate preview sheets” when you’re ready.",
+        });
       }),
-    [generatePreviews, guard, mutateFor, runAnalyzeInternal],
+    [appendEvent, guard, mutateFor, runAnalyzeInternal],
   );
 
   const regenerateSource = useCallback(
@@ -1377,6 +1673,35 @@ export function useFable(): UseFable {
     [mutate],
   );
 
+  // B10: explicit blueprint edit (✎ Edit → Save on the BlueprintCard).
+  // TRADEOFF: this is a cheap LOCAL mutate — sharedStylePrompt is NOT
+  // re-derived here (that would cost a Gemini revise call per save). The
+  // edited style fields take effect immediately in the preview-sheet prompt
+  // (which reads style.* directly), and the sharedStylePrompt re-syncs the
+  // next time any revise op runs (edit_style/restyle_set/edit_icon…).
+  const updateStyle = useCallback(
+    (patch: Partial<FableStyle>) => {
+      mutate((p) => (p.style ? { ...p, style: { ...p.style, ...patch } } : p));
+    },
+    [mutate],
+  );
+
+  // B14: display-only backdrop behind transparent images ("" → checkerboard).
+  // Pure CSS — never triggers regeneration; persisted with the project.
+  const setViewBackground = useCallback(
+    (bg: string) => {
+      mutate((p) => ({ ...p, viewBackground: bg || undefined }));
+    },
+    [mutate],
+  );
+
+  // B15: manual "Find on source" (BlueprintCard). Re-uses the same never-throw
+  // internal as the automatic post-analyze run.
+  const locateSourceCrops = useCallback(
+    () => runLocateIcons(projectRef.current.id),
+    [runLocateIcons],
+  );
+
   return {
     project,
     busy,
@@ -1384,6 +1709,7 @@ export function useFable(): UseFable {
     devMode,
     pendingDecision,
     lastRawError,
+    rawLog,
     setDevMode,
     clearError,
     newProject,
@@ -1403,6 +1729,9 @@ export function useFable(): UseFable {
     regenerateSheet,
     removeCandidate,
     updateCandidate,
+    updateStyle,
+    setViewBackground,
+    locateSourceCrops,
     reviseIconsDirect,
     tryAnotherSheet,
     regenerateFinal,

@@ -2,34 +2,41 @@
 
 // Fable Bench — finals artifact card (inline in the chat feed).
 //
-// Responsive icon grid on a checkerboard-transparency backdrop, with shimmer
-// while generating, retry on fail, per-icon download + regenerate. Icons are
-// clickable → detailed Lightbox (download / open in new tab). A progress line
-// ("7/9 done · $0.08") and, once complete, Download all + "Save & finish".
-// Updates live as icons stream in (renders straight from project.finals).
+// Responsive icon grid on a configurable backdrop (checkerboard default — B14
+// picker recolors the display CSS only, never regenerates), with shimmer while
+// generating, retry on fail, per-icon ⤓ download / ↻ regenerate / ✎ refine
+// (B12: the refine popover routes a structured regenerate_icon op through
+// reviseIconsDirect — prompt revision, then a fresh final render). Icons are
+// clickable → detailed Lightbox. A progress line ("7/9 done · $0.08") and,
+// once complete, Download all + "Save & finish".
 
 import { useState } from "react";
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
 import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
 import { totalCostUSD } from "@/lib/fable/pricing";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
-import type { FableFinalIcon, FableProject } from "@/lib/fable/types";
+import type { FableFinalIcon, FableOp, FableProject } from "@/lib/fable/types";
 import { ArtifactCard, CardAction, fmtUsd, Lightbox, Pill } from "../ui";
-
-const CHECKER = "repeating-conic-gradient(#27272a 0% 25%, #18181b 0% 50%) 50% / 16px 16px";
+import BackdropPicker, { backdropCss } from "./BackdropPicker";
 
 export default function FinalsCard({
   project,
   busy,
   onRetry,
   onRegenerate,
+  onIconOp,
   onSaveFinish,
+  onSetViewBackground,
 }: {
   project: FableProject;
   busy: boolean;
   onRetry: (iconId: string) => void;
   onRegenerate: (iconId: string) => void;
+  /** B12: structured mechanical op — executed directly, no agent round-trip. */
+  onIconOp: (ops: FableOp[], description: string) => void;
   onSaveFinish: () => void;
+  /** B14: persist the display-only backdrop choice on the project. */
+  onSetViewBackground: (bg: string) => void;
 }) {
   const finals = project.finals;
   const successes = finals.filter((f) => f.status === "success");
@@ -71,8 +78,10 @@ export default function FinalsCard({
             key={f.id}
             final={f}
             busy={busy}
+            backdrop={backdropCss(project.viewBackground)}
             onRetry={onRetry}
             onRegenerate={onRegenerate}
+            onIconOp={onIconOp}
             onEnlarge={() => setEnlarged(f)}
           />
         ))}
@@ -90,6 +99,11 @@ export default function FinalsCard({
         )}
       </div>
 
+      {/* B14: display-only backdrop behind the transparent icons — pure CSS. */}
+      <div className="mt-3">
+        <BackdropPicker value={project.viewBackground} onChange={onSetViewBackground} />
+      </div>
+
       {enlarged && enlarged.imageUrl && (
         <Lightbox
           src={enlarged.imageUrl}
@@ -105,23 +119,53 @@ export default function FinalsCard({
 function FinalCell({
   final,
   busy,
+  backdrop,
   onRetry,
   onRegenerate,
+  onIconOp,
   onEnlarge,
 }: {
   final: FableFinalIcon;
   busy: boolean;
+  backdrop: string;
   onRetry: (iconId: string) => void;
   onRegenerate: (iconId: string) => void;
+  onIconOp: (ops: FableOp[], description: string) => void;
   onEnlarge: () => void;
 }) {
   const pending = final.status === "pending" || final.status === "generating";
   const displaySrc = useObjectUrl(final.status === "success" ? final.imageUrl : null);
+  // B12: refine popover (same dialogue SheetCard cells have).
+  const [popover, setPopover] = useState(false);
+  const [refine, setRefine] = useState("");
+
+  const togglePopover = () => {
+    setPopover((v) => !v);
+    setRefine("");
+  };
+
+  const submitRefine = () => {
+    if (!refine.trim() || busy) return;
+    onIconOp(
+      [
+        {
+          op: "regenerate_icon",
+          iconId: final.iconId,
+          name: null,
+          instruction: refine.trim(),
+        },
+      ],
+      `Refine the ${final.name} icon (${final.iconId}): ${refine.trim()}`,
+    );
+    setRefine("");
+    setPopover(false);
+  };
+
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 p-2">
+    <div className="relative flex flex-col gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 p-2">
       <div
         className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg"
-        style={{ background: CHECKER }}
+        style={{ background: backdrop }}
       >
         {final.status === "success" && displaySrc ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -153,19 +197,69 @@ function FinalCell({
       {pending && <Pill tone="violet">{final.status}</Pill>}
       {final.status === "success" && (
         <div className="flex gap-1">
+          {/* B13: icon buttons (titles + aria-labels preserved). */}
           <button
             onClick={() => downloadDataUrl(final.imageUrl, `${slugify(final.name)}.png`)}
-            className="flex-1 rounded bg-cyan-500/15 px-1.5 py-1 text-[10px] text-cyan-300 ring-1 ring-cyan-500/30 hover:bg-cyan-500/25"
+            title="Download PNG"
+            aria-label={`Download ${final.name} as PNG`}
+            className="flex-1 rounded bg-cyan-500/15 px-1.5 py-1 text-[11px] text-cyan-300 ring-1 ring-cyan-500/30 hover:bg-cyan-500/25"
           >
-            PNG
+            ⤓
           </button>
           <button
             onClick={() => onRegenerate(final.iconId)}
             disabled={busy}
-            className="flex-1 rounded border border-zinc-700 px-1.5 py-1 text-[10px] text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
+            title="Regenerate"
+            aria-label={`Regenerate ${final.name}`}
+            className="flex-1 rounded border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 disabled:opacity-40"
           >
-            Regen
+            ↻
           </button>
+          <button
+            onClick={togglePopover}
+            disabled={busy}
+            title="Refine with an instruction"
+            aria-label={`Refine ${final.name}`}
+            className={`flex-1 rounded border px-1.5 py-1 text-[11px] disabled:opacity-40 ${
+              popover
+                ? "border-violet-600/60 bg-violet-500/15 text-violet-200"
+                : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+            }`}
+          >
+            ✎
+          </button>
+        </div>
+      )}
+
+      {/* B12: per-icon popover — Regenerate + free-text refine. */}
+      {popover && final.status === "success" && (
+        <div
+          className="absolute left-1/2 top-full z-20 mt-1 w-56 -translate-x-1/2 rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-left shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="text-xs font-medium text-zinc-100">{final.name}</p>
+          <p className="font-mono text-[10px] text-zinc-500">{final.iconId}</p>
+          <button
+            onClick={() => {
+              onRegenerate(final.iconId);
+              setPopover(false);
+            }}
+            disabled={busy}
+            className="mt-2 w-full rounded-lg bg-violet-500/15 px-2 py-1 text-xs text-violet-200 ring-1 ring-violet-500/40 hover:bg-violet-500/25 disabled:opacity-40"
+          >
+            Regenerate this icon
+          </button>
+          <input
+            value={refine}
+            onChange={(e) => setRefine(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") submitRefine();
+            }}
+            placeholder="refine…"
+            autoFocus
+            className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 focus:border-cyan-500/60 focus:outline-none"
+          />
         </div>
       )}
     </div>

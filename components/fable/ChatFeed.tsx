@@ -22,7 +22,7 @@
 // reliably lands right after the assistant turn that produced it.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FableProject, IconCandidate } from "@/lib/fable/types";
+import type { FableProject, FableStyle, IconCandidate } from "@/lib/fable/types";
 import type { FableBusy, PendingDecision, UseFable } from "@/lib/fable/use-fable";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import { Lightbox } from "./ui";
@@ -101,6 +101,11 @@ export default function ChatFeed({
         });
       } else if (ev.kind === "step" && devMode) {
         out.push({ key: ev.id, at: ev.at, order: 1, node: <StepRow ev={ev} /> });
+      } else if (ev.kind === "step" && !devMode && ev.ok && ev.prompt) {
+        // W3: LIVE mode — a subtle expandable "model — view prompt" row for
+        // completed generation steps. Older events without prompt/model keep
+        // rendering as before (i.e. not at all outside dev mode).
+        out.push({ key: ev.id, at: ev.at, order: 1, node: <GenStepRow ev={ev} /> });
       }
     }
 
@@ -145,6 +150,10 @@ export default function ChatFeed({
             onUpdateCandidate={(id: string, patch: Partial<IconCandidate>) =>
               fableRef.current.updateCandidate(id, patch)
             }
+            // B10: explicit ✎ Edit → Save applies a local style patch.
+            onUpdateStyle={(patch: Partial<FableStyle>) => fableRef.current.updateStyle(patch)}
+            // B15: manual "Find on source" (one Gemini call + client crops).
+            onLocateCrops={() => void fableRef.current.locateSourceCrops()}
           />
         ),
       });
@@ -170,6 +179,8 @@ export default function ChatFeed({
               fableRef.current.tryAnotherSheet(sheet.id, instruction)
             }
             onIconOp={(ops, description) => fableRef.current.reviseIconsDirect(ops, description)}
+            // B14: display-only backdrop, persisted on the project.
+            onSetViewBackground={(bg) => fableRef.current.setViewBackground(bg)}
           />
         ),
       });
@@ -191,7 +202,11 @@ export default function ChatFeed({
             onRetry={(iconId) => fableRef.current.retryFinal(iconId)}
             // Mechanical regen — direct retryFinal path with a feed note.
             onRegenerate={(iconId) => fableRef.current.regenerateFinal(iconId)}
+            // B12: refine popover → structured regenerate_icon op, no agent.
+            onIconOp={(ops, description) => fableRef.current.reviseIconsDirect(ops, description)}
             onSaveFinish={() => fableRef.current.sendMessage("Save and finish the project.", null)}
+            // B14: display-only backdrop, persisted on the project.
+            onSetViewBackground={(bg) => fableRef.current.setViewBackground(bg)}
           />
         ),
       });
@@ -347,6 +362,34 @@ function StepRow({
       <span className={ev.ok ? "text-emerald-400" : "text-red-400"}>{ev.ok ? "✓" : "✕"}</span>
       <span className="font-mono text-zinc-600">{ev.step}</span>
       <span>{ev.detail}</span>
+    </div>
+  );
+}
+
+/** W3 (LIVE mode): subtle expandable row for a completed generation step —
+ *  "gpt-image-1-mini · medium — view prompt" → the full prompt in a <pre>. */
+function GenStepRow({
+  ev,
+}: {
+  ev: Extract<FableProject["events"][number], { kind: "step" }>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="px-1 text-[11px] text-zinc-600">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 transition-colors hover:text-zinc-400"
+        aria-expanded={open}
+      >
+        <span className="font-mono">{ev.model ?? ev.step}</span>
+        <span>— {open ? "hide" : "view"} prompt</span>
+        <span className="text-[9px]">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <pre className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950/70 p-2.5 font-mono text-[10px] leading-relaxed text-zinc-400">
+          {ev.prompt}
+        </pre>
+      )}
     </div>
   );
 }

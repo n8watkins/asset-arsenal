@@ -1,5 +1,6 @@
 import { AgentRequestSchema } from "@/lib/fable/schemas";
 import { runAgent } from "@/lib/fable/gemini-steps";
+import { buildDebugRaw } from "@/lib/fable/debug";
 import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { GeminiError } from "@/lib/gemini/errors";
 
@@ -19,11 +20,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const { text, imageBase64, state, model } = parsed.data;
+  const { text, imageBase64, state, model, debug } = parsed.data;
 
   try {
     const { decision, usage } = await runAgent({ text, imageBase64, state, model });
-    return Response.json({ decision, usage });
+    const payload = { decision, usage };
+    return Response.json(
+      debug ? { ...payload, debugRaw: buildDebugRaw(parsed.data, payload) } : payload,
+    );
   } catch (err) {
     console.error("[fable/agent]", err);
     if (err instanceof FableError) {

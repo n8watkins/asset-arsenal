@@ -1,6 +1,7 @@
 import { ImproveSourceRequestSchema } from "@/lib/fable/schemas";
 import { improveSourceBrief } from "@/lib/fable/gemini-steps";
 import { renderImprovedSource } from "@/lib/fable/openai-steps";
+import { buildDebugRaw } from "@/lib/fable/debug";
 import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { GeminiError } from "@/lib/gemini/errors";
 import type { FableUsageRecord } from "@/lib/fable/types";
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { imageBase64, instruction, model, imageModel, quality } = parsed.data;
+  const { imageBase64, instruction, model, imageModel, quality, debug } = parsed.data;
   const accumulatedUsage: FableUsageRecord[] = [];
 
   try {
@@ -38,12 +39,15 @@ export async function POST(request: Request) {
     });
     accumulatedUsage.push(...renderResult.usage);
 
-    return Response.json({
+    const payload = {
       critique: briefResult.critique,
       imagePrompt: briefResult.imagePrompt,
       imageBase64: renderResult.imageBase64,
       usage: accumulatedUsage,
-    });
+    };
+    return Response.json(
+      debug ? { ...payload, debugRaw: buildDebugRaw(parsed.data, payload) } : payload,
+    );
   } catch (err) {
     console.error("[fable/improve-source]", err);
     if (err instanceof FableError) {

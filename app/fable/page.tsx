@@ -235,7 +235,7 @@ export default function FablePage() {
                   project={project}
                   open={drawerOpen}
                   lastRawError={fable.lastRawError}
-                  /* TODO(integration): pass fable.rawLog once the hook exposes it */
+                  rawLog={fable.rawLog}
                   onToggle={() => setDrawerOpen((o) => !o)}
                   onRunAnalyze={() => fable.runAnalyze()}
                   onRunPreviews={fable.runPreviews}
@@ -290,7 +290,7 @@ export default function FablePage() {
                   project={project}
                   open={drawerOpen}
                   lastRawError={fable.lastRawError}
-                  /* TODO(integration): pass fable.rawLog once the hook exposes it */
+                  rawLog={fable.rawLog}
                   onToggle={() => setDrawerOpen((o) => !o)}
                   onRunAnalyze={() => fable.runAnalyze()}
                   onRunPreviews={fable.runPreviews}

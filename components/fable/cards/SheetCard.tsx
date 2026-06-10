@@ -14,6 +14,7 @@ import { useState } from "react";
 import type { FableOp, FableProject, IconCandidate, PreviewSheet } from "@/lib/fable/types";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import { ArtifactCard, CardAction, Lightbox, Pill } from "../ui";
+import BackdropPicker, { backdropCss } from "./BackdropPicker";
 
 export default function SheetCard({
   sheet,
@@ -24,6 +25,7 @@ export default function SheetCard({
   onRegenerateSheet,
   onTryAnotherSheet,
   onIconOp,
+  onSetViewBackground,
 }: {
   sheet: PreviewSheet;
   project: FableProject;
@@ -34,6 +36,8 @@ export default function SheetCard({
   onTryAnotherSheet: (instruction: string) => void;
   /** Structured mechanical op — executed directly, no agent round-trip. */
   onIconOp: (ops: FableOp[], description: string) => void;
+  /** B14: persist the display-only backdrop choice on the project. */
+  onSetViewBackground: (bg: string) => void;
 }) {
   const [hoverCell, setHoverCell] = useState<number | null>(null);
   const [openCell, setOpenCell] = useState<number | null>(null);
@@ -55,8 +59,11 @@ export default function SheetCard({
   };
 
   // Open/close a cell popover; the refine input is cleared on every open so
-  // text never leaks from one cell (or sheet) to another.
+  // text never leaks from one cell (or sheet) to another. B11: dialogue is
+  // available on draft AND approved sheets; superseded sheets are history —
+  // their single action is "Branch from this version" below.
   const toggleCell = (i: number | null) => {
+    if (sheet.status === "superseded") return;
     setOpenCell((prev) => (i === null || prev === i ? null : i));
     setRefine("");
   };
@@ -90,12 +97,15 @@ export default function SheetCard({
       }
     >
       <div className="relative inline-block w-full">
-        {/* The image OWNS the pointer — right-click / open-in-new-tab work. */}
+        {/* The image OWNS the pointer — right-click / open-in-new-tab work.
+            B14: the wrapper's CSS background shows through transparent sheets
+            (checkerboard by default, recolorable via the picker below). */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={displaySrc}
           alt={`sheet ${sheet.index}`}
           className="w-full cursor-pointer rounded-xl ring-1 ring-zinc-800"
+          style={{ background: backdropCss(project.viewBackground) }}
           onMouseMove={(e) => setHoverCell(cellFromEvent(e))}
           onMouseLeave={() => setHoverCell(null)}
           onClick={(e) => toggleCell(cellFromEvent(e))}
@@ -213,6 +223,50 @@ export default function SheetCard({
           />
         </div>
       )}
+
+      {/* B11: approved sheets stay conversational — an instruction renders a
+          NEW draft variant over the same icons; the approved sheet itself is
+          never mutated or superseded. */}
+      {sheet.status === "approved" && (
+        <div className="mt-3 flex flex-col gap-2">
+          <input
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && instruction.trim() && !busy) {
+                onTryAnotherSheet(instruction.trim());
+                setInstruction("");
+              }
+            }}
+            placeholder="instruction… (↵ renders a NEW draft variant — this approved sheet stays)"
+            disabled={busy}
+            className="rounded-lg border border-zinc-700 bg-zinc-950/60 px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-500/60 focus:outline-none"
+          />
+        </div>
+      )}
+
+      {/* B11: superseded sheets get exactly one action — branch a new draft
+          from this version, using its prompt as the base instruction. */}
+      {sheet.status === "superseded" && (
+        <div className="mt-3">
+          <CardAction
+            tone="violet"
+            onClick={() =>
+              onTryAnotherSheet(
+                `Branch from an earlier sheet version. Recreate that version's direction as the base, then keep it consistent. That version's full prompt was:\n${sheet.prompt}`,
+              )
+            }
+            disabled={busy}
+          >
+            ⎇ Branch from this version
+          </CardAction>
+        </div>
+      )}
+
+      {/* B14: display-only backdrop behind transparent sheets — pure CSS. */}
+      <div className="mt-3">
+        <BackdropPicker value={project.viewBackground} onChange={onSetViewBackground} />
+      </div>
 
       {lightbox && (
         <Lightbox

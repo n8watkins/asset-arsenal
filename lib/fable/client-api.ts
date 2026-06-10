@@ -15,6 +15,8 @@ import type {
   FinalIconResponse,
   ImproveSourceRequest,
   ImproveSourceResponse,
+  LocateIconsRequest,
+  LocateIconsResponse,
   PreviewSheetRequest,
   PreviewSheetResponse,
   RevisePromptsRequest,
@@ -89,4 +91,10 @@ export function postFinalIcon(
   body: FinalIconRequest,
 ): Promise<FinalIconResponse> {
   return postJSON<FinalIconResponse>("/api/fable/final-icon", body);
+}
+
+export function postLocateIcons(
+  body: LocateIconsRequest,
+): Promise<LocateIconsResponse> {
+  return postJSON<LocateIconsResponse>("/api/fable/locate-icons", body);
 }

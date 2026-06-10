@@ -1,5 +1,6 @@
 import { RevisePromptsRequestSchema } from "@/lib/fable/schemas";
 import { revisePrompts } from "@/lib/fable/gemini-steps";
+import { buildDebugRaw } from "@/lib/fable/debug";
 import { FableError, serializeRawError } from "@/lib/fable/errors";
 import { GeminiError } from "@/lib/gemini/errors";
 
@@ -19,15 +20,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const { style, sharedStylePrompt, candidates, ops, model } = parsed.data;
+  const { style, sharedStylePrompt, candidates, ops, model, debug } = parsed.data;
 
   try {
     const result = await revisePrompts({ style, sharedStylePrompt, candidates, ops, model });
-    return Response.json({
+    const payload = {
       candidates: result.candidates,
       sharedStylePrompt: result.sharedStylePrompt,
+      // B9/B14: edit_style / set_background ops patch the style itself.
+      style: result.style,
       usage: result.usage,
-    });
+    };
+    return Response.json(
+      debug ? { ...payload, debugRaw: buildDebugRaw(parsed.data, payload) } : payload,
+    );
   } catch (err) {
     console.error("[fable/revise-prompts]", err);
     if (err instanceof FableError) {

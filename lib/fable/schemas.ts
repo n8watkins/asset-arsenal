@@ -11,6 +11,9 @@ const imageBase64Field = z.string().min(1, "imageBase64 is required");
 // Optional model overrides — catalog ids (lib/icon/model-reference.ts).
 const modelField = z.string().min(1).optional();
 
+// W4: every route accepts debug:true → include a scrubbed debugRaw on success.
+const debugField = z.boolean().optional();
+
 // POST /api/fable/agent
 export const AgentRequestSchema = z.object({
   // Empty text is allowed — an image-only send routes to the agent, which
@@ -36,6 +39,7 @@ export const AgentRequestSchema = z.object({
       .default([]),
   }),
   model: modelField,
+  debug: debugField,
 });
 
 // POST /api/fable/improve-source
@@ -45,6 +49,7 @@ export const ImproveSourceRequestSchema = z.object({
   model: modelField,
   imageModel: modelField,
   quality: z.enum(["low", "medium", "high"]).optional(),
+  debug: debugField,
 });
 
 // POST /api/fable/analyze
@@ -53,6 +58,7 @@ export const AnalyzeStyleRequestSchema = z.object({
   guidance: z.string().optional(),
   maxIcons: z.number().int().min(1).optional(),
   model: modelField,
+  debug: debugField,
 });
 
 // FableOp sub-schema — flat shape mirroring the types.ts definition.
@@ -74,6 +80,8 @@ const FableStyleSchema = z.object({
   background: z.string(),
   mood: z.array(z.string()),
   negativeRules: z.array(z.string()),
+  // B14: "transparent" | color; optional — older clients/projects omit it.
+  iconBackground: z.string().optional(),
 });
 
 // IconCandidate sub-schema.
@@ -84,6 +92,12 @@ const IconCandidateSchema = z.object({
   rationale: z.string(),
   prompt: z.string(),
   status: z.enum(["active", "removed"]),
+  // B15: client-derived crop metadata rides along on revise round-trips.
+  sourceCrop: z.string().optional(),
+  sourceBox: z
+    .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+    .nullable()
+    .optional(),
 });
 
 // POST /api/fable/revise-prompts
@@ -93,6 +107,7 @@ export const RevisePromptsRequestSchema = z.object({
   candidates: z.array(IconCandidateSchema).min(1),
   ops: z.array(FableOpSchema).min(1),
   model: modelField,
+  debug: debugField,
 });
 
 // POST /api/fable/preview-sheet
@@ -110,8 +125,11 @@ export const PreviewSheetRequestSchema = z.object({
   icons: z.array(PreviewSheetIconSchema).min(1),
   sheetIndex: z.number().int().min(0),
   instruction: z.string().optional(),
+  // B14: "transparent" | color; absent → opaque default.
+  background: z.string().optional(),
   imageModel: modelField,
   quality: z.enum(["low", "medium", "high"]).optional(),
+  debug: debugField,
 });
 
 // POST /api/fable/final-icon
@@ -125,8 +143,21 @@ export const FinalIconRequestSchema = z.object({
     prompt: z.string(),
   }),
   sheetPosition: z.string().optional(),
+  // B15: per-icon source crop as a SECOND reference image (data URL).
+  sourceCropBase64: z.string().optional(),
   imageModel: modelField,
   quality: z.enum(["low", "medium", "high"]).optional(),
+  debug: debugField,
+});
+
+// POST /api/fable/locate-icons (B15)
+export const LocateIconsRequestSchema = z.object({
+  imageBase64: imageBase64Field,
+  candidates: z
+    .array(z.object({ id: z.string(), name: z.string(), concept: z.string() }))
+    .min(1),
+  model: modelField,
+  debug: debugField,
 });
 
 // Re-export sub-schemas for convenience.
