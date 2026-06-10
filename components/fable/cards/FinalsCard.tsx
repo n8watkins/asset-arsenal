@@ -1,26 +1,28 @@
 "use client";
 
-// Fable Bench — finals canvas. Responsive grid on a checkerboard-transparency
-// backdrop, with status shimmer, retry, per-icon download, "download all".
+// Fable Bench — finals artifact card (inline in the chat feed).
+//
+// Responsive icon grid on a checkerboard-transparency backdrop, with shimmer
+// while generating, retry on fail, per-icon download + regenerate. A progress
+// line ("7/9 done · $0.08") and, once complete, Download all + "Save & finish".
+// Updates live as icons stream in (renders straight from project.finals).
 
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
+import { totalCostUSD } from "@/lib/fable/pricing";
 import type { FableFinalIcon, FableProject } from "@/lib/fable/types";
-import { GhostButton, Pill, PrimaryButton } from "./ui";
+import { ArtifactCard, CardAction, fmtUsd, Pill } from "../ui";
 
-const CHECKER =
-  "repeating-conic-gradient(#27272a 0% 25%, #18181b 0% 50%) 50% / 16px 16px";
+const CHECKER = "repeating-conic-gradient(#27272a 0% 25%, #18181b 0% 50%) 50% / 16px 16px";
 
-export default function FinalsGrid({
+export default function FinalsCard({
   project,
   busy,
-  devMode,
   onRetry,
   onRegenerate,
   onSaveFinish,
 }: {
   project: FableProject;
   busy: boolean;
-  devMode: boolean;
   onRetry: (iconId: string) => void;
   onRegenerate: (iconId: string) => void;
   onSaveFinish: () => void;
@@ -30,6 +32,7 @@ export default function FinalsGrid({
   const allDone =
     finals.length > 0 && finals.every((f) => f.status === "success" || f.status === "failed");
   const allOk = finals.length > 0 && finals.every((f) => f.status === "success");
+  const cost = totalCostUSD(project.usage, "openai");
 
   function downloadAll() {
     for (const f of successes) {
@@ -38,64 +41,58 @@ export default function FinalsGrid({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-6">
-      <div className="flex items-end justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Final icons</h2>
-          <p className="text-sm text-zinc-500">
-            {successes.length}/{finals.length} rendered
-            {project.stage === "finals" && !allDone ? " · generating…" : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <GhostButton onClick={downloadAll} disabled={successes.length === 0}>
-            Download all
-          </GhostButton>
-        </div>
+    <ArtifactCard
+      title="Final icons"
+      badge={
+        allDone ? <Pill tone="emerald">done</Pill> : <Pill tone="violet">generating</Pill>
+      }
+    >
+      <div className="mb-3 flex items-center gap-2 text-xs text-zinc-400">
+        <span>
+          {successes.length}/{finals.length} done
+        </span>
+        <span className="text-zinc-600">·</span>
+        <span className="text-emerald-300">{fmtUsd(cost)}</span>
+        {!allDone && (
+          <span className="ml-1 inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-violet-400" />
+        )}
       </div>
 
-      {allOk && (
-        <div className="rounded-2xl border border-emerald-700/40 bg-emerald-950/20 p-4">
-          <p className="text-sm font-medium text-emerald-200">Your icon pack is ready.</p>
-          <p className="text-xs text-emerald-300/70">
-            {successes.length} icons in the {project.style?.styleName ?? "extracted"} style.
-          </p>
-          <PrimaryButton className="mt-3" onClick={onSaveFinish} disabled={busy}>
-            Save &amp; finish
-          </PrimaryButton>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5">
         {finals.map((f) => (
-          <FinalCard
+          <FinalCell
             key={f.id}
             final={f}
             busy={busy}
-            devMode={devMode}
             onRetry={onRetry}
             onRegenerate={onRegenerate}
           />
         ))}
+        {finals.length === 0 && <p className="text-sm text-zinc-600">No finals yet.</p>}
       </div>
 
-      {finals.length === 0 && (
-        <p className="text-sm text-zinc-600">No finals yet.</p>
-      )}
-    </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <CardAction tone="cyan" onClick={downloadAll} disabled={successes.length === 0}>
+          ⤓ Download all
+        </CardAction>
+        {allOk && project.stage !== "complete" && (
+          <CardAction tone="emerald" onClick={onSaveFinish} disabled={busy}>
+            ✓ Save &amp; finish
+          </CardAction>
+        )}
+      </div>
+    </ArtifactCard>
   );
 }
 
-function FinalCard({
+function FinalCell({
   final,
   busy,
-  devMode,
   onRetry,
   onRegenerate,
 }: {
   final: FableFinalIcon;
   busy: boolean;
-  devMode: boolean;
   onRetry: (iconId: string) => void;
   onRegenerate: (iconId: string) => void;
 }) {
@@ -126,7 +123,6 @@ function FinalCard({
       </div>
       <div className="flex items-center gap-1">
         <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-300">{final.name}</span>
-        <span className="font-mono text-[9px] text-zinc-600">{final.iconId}</span>
       </div>
       {pending && <Pill tone="violet">{final.status}</Pill>}
       {final.status === "success" && (
@@ -145,12 +141,6 @@ function FinalCard({
             Regen
           </button>
         </div>
-      )}
-      {devMode && final.prompt && (
-        <details className="text-[10px]">
-          <summary className="cursor-pointer text-zinc-600">prompt</summary>
-          <p className="mt-1 whitespace-pre-wrap text-zinc-500">{final.prompt}</p>
-        </details>
       )}
     </div>
   );

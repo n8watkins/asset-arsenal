@@ -687,6 +687,7 @@ export function useFable(): UseFable {
         kind: "user_message",
         text,
         imageAttached: !!imageDataUrl,
+        imageUrl: imageDataUrl ?? undefined,
       });
 
       setBusy({ step: "agent_route", detail: "Thinking…" });

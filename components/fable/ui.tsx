@@ -41,6 +41,16 @@ export const STAGE_LABELS: Record<FableStage, string> = {
   complete: "Done",
 };
 
+/** Quick-action chips shown above the composer, contextual to the stage. */
+export const STAGE_QUICK_ACTIONS: Record<FableStage, string[]> = {
+  intake: ["Make me a matching icon pack", "Use my image as-is"],
+  source_review: ["Looks good →", "Try again", "Make it more premium"],
+  blueprint: ["Generate preview sheets", "Add a settings icon", "Make them more minimal"],
+  preview_review: ["Generate final icons", "Try another sheet", "Make them bolder"],
+  finals: ["Save & finish", "Regenerate the weak ones"],
+  complete: ["Start a new pack"],
+};
+
 export function Pill({
   children,
   tone = "zinc",
@@ -92,5 +102,86 @@ export function GhostButton({
     >
       {children}
     </button>
+  );
+}
+
+/** Small inline action button used inside artifact cards. */
+export function CardAction({
+  children,
+  tone = "zinc",
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  tone?: "cyan" | "violet" | "emerald" | "zinc" | "red";
+}) {
+  const tones: Record<string, string> = {
+    cyan: "bg-cyan-500/15 text-cyan-200 ring-cyan-500/40 hover:bg-cyan-500/25",
+    violet: "bg-violet-500/15 text-violet-200 ring-violet-500/40 hover:bg-violet-500/25",
+    emerald: "bg-emerald-500/15 text-emerald-200 ring-emerald-600/40 hover:bg-emerald-500/25",
+    zinc: "bg-zinc-800/80 text-zinc-200 ring-zinc-700/50 hover:bg-zinc-700/70",
+    red: "bg-red-500/15 text-red-200 ring-red-700/40 hover:bg-red-500/25",
+  };
+  return (
+    <button
+      {...props}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ring-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${tones[tone]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The chrome every artifact card shares: rounded-2xl, soft border + shadow, a
+ * gentle mount animation, and a dimmed/collapsed treatment for superseded ones.
+ */
+export function ArtifactCard({
+  title,
+  badge,
+  dimmed = false,
+  children,
+}: {
+  title: React.ReactNode;
+  badge?: React.ReactNode;
+  dimmed?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`fable-card-in rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 shadow-lg shadow-black/20 ${
+        dimmed ? "opacity-60" : ""
+      }`}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-sm font-semibold text-zinc-200">{title}</span>
+        {badge}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A simple full-screen lightbox for enlarging an image. */
+export function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt="enlarged"
+        className="max-h-full max-w-full rounded-xl object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <button
+        onClick={onClose}
+        className="absolute right-5 top-5 rounded-full bg-zinc-900/80 px-3 py-1 text-sm text-zinc-300 ring-1 ring-zinc-700 hover:text-zinc-100"
+        aria-label="Close"
+      >
+        ✕
+      </button>
+    </div>
   );
 }

@@ -220,7 +220,15 @@ export type FableUsageRecord = {
 // ---------------------------------------------------------------------------
 
 export type FableEvent =
-  | { id: string; at: string; kind: "user_message"; text: string; imageAttached: boolean }
+  | {
+      id: string;
+      at: string;
+      kind: "user_message";
+      text: string;
+      imageAttached: boolean;
+      /** Data URL of the attached image, so the chat bubble can render it. */
+      imageUrl?: string;
+    }
   | { id: string; at: string; kind: "assistant"; text: string }
   | { id: string; at: string; kind: "decision"; decision: FableDecision; stageBefore: FableStage }
   | { id: string; at: string; kind: "step"; step: FableStepKey; ok: boolean; detail: string };
