@@ -1,5 +1,14 @@
 # Deep-Dive Code Review — 2026-06-10
 
+> **Status (same day):** All findings in Parts 1–2 are FIXED (commits
+> `9987246`, `c3ede72`, `92b69be`), except the two deferred-by-design items:
+> the fable data-URL→Blob storage migration and the chat/project split (Part 1
+> §10). Gemini findings were resolved by archiving the surface (copy-only).
+> Part 3 consolidation: items 1–2 (registry, unified ledger write-path) are
+> done; 3–7 (lib/llm helpers, storage convergence, prompt fragments, type
+> atoms, micro-dupes) remain open. Router/gemini-chat stay out of the ledger
+> (router by design, gemini archived).
+
 Full review of all benches, their integrations, and shared infrastructure.
 Ground rules honored: the experimental benches (`/bench`, `/bench-s`,
 `/bench-v2`, `/bench-router`, `/experiments`, `/gemini`) keep all their
