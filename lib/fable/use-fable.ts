@@ -237,13 +237,11 @@ export function useFable(): UseFable {
   const [lastRawError, setLastRawError] = useState<FableLastRawError | null>(null);
   const [rawLog, setRawLog] = useState<FableRawLogEntry[]>([]);
 
-  // devMode mirrored in a ref so async executors read the CURRENT value when
-  // deciding whether to request debugRaw from the routes (W4).
-  const devModeRef = useRef(devMode);
-  devModeRef.current = devMode;
-
-  /** True → routes should include scrubbed raw I/O in their responses. */
-  const wantDebug = useCallback(() => devModeRef.current || undefined, []);
+  /** Routes always include scrubbed raw I/O in their responses: the ring
+   *  buffer is in-memory and capped at 20, so capture is cheap — and gating it
+   *  on devMode meant flipping to Dev AFTER a generation showed an empty Raw
+   *  I/O tab. Display is still dev-only (DevDrawer). */
+  const wantDebug = useCallback(() => true as const, []);
 
   /** W4: push one scrubbed request/response pair onto the ring buffer (≤20). */
   const pushRaw = useCallback((step: string, debugRaw?: FableDebugRaw) => {
@@ -569,6 +567,7 @@ export function useFable(): UseFable {
           "locate_icons",
           true,
           `Found ${found} of ${active.length} icons on the source.`,
+          { model: res.usage[0]?.model, prompt: res.usage[0]?.promptPreview },
         );
       } catch (err) {
         // Silent by design: a dev-mode step event + raw error, nothing else.
@@ -1371,7 +1370,11 @@ export function useFable(): UseFable {
         });
         pushRaw("agent_route", res.debugRaw);
         appendUsage(pid, res.usage);
-        appendStep(pid, "agent_route", true, `Intent: ${res.decision.intent}.`);
+        appendStep(pid, "agent_route", true, `Intent: ${res.decision.intent}.`, {
+          // The usage record carries the model the server actually ran.
+          model: res.usage[0]?.model,
+          prompt: res.usage[0]?.promptPreview,
+        });
         decision = res.decision;
       } catch (err) {
         noteFailure(pid, err);

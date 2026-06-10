@@ -352,16 +352,37 @@ function WorkingBubble({ detail }: { detail: string }) {
   );
 }
 
+/** Dev-mode step row: step · model · detail, plus a prompt expander whenever
+ *  the event recorded what was sent (older events lack model/prompt and render
+ *  as the plain row). */
 function StepRow({
   ev,
 }: {
   ev: Extract<FableProject["events"][number], { kind: "step" }>;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="flex items-center gap-2 px-1 text-[11px] text-zinc-500">
-      <span className={ev.ok ? "text-emerald-400" : "text-red-400"}>{ev.ok ? "✓" : "✕"}</span>
-      <span className="font-mono text-zinc-600">{ev.step}</span>
-      <span>{ev.detail}</span>
+    <div className="px-1 text-[11px] text-zinc-500">
+      <div className="flex items-center gap-2">
+        <span className={ev.ok ? "text-emerald-400" : "text-red-400"}>{ev.ok ? "✓" : "✕"}</span>
+        <span className="font-mono text-zinc-600">{ev.step}</span>
+        {ev.model && <span className="font-mono text-violet-400/80">{ev.model}</span>}
+        <span>{ev.detail}</span>
+        {ev.prompt && (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="shrink-0 text-zinc-600 transition-colors hover:text-zinc-300"
+            aria-expanded={open}
+          >
+            {open ? "hide" : "prompt"} {open ? "▴" : "▾"}
+          </button>
+        )}
+      </div>
+      {open && ev.prompt && (
+        <pre className="ml-5 mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-950/70 p-2.5 font-mono text-[10px] leading-relaxed text-zinc-400">
+          {ev.prompt}
+        </pre>
+      )}
     </div>
   );
 }

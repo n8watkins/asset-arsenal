@@ -265,6 +265,16 @@ function safeStringify(value: unknown): string {
   }
 }
 
+/** The model a captured request ran, pulled from its scrubbed body. */
+function modelOf(entry: LocalRawLogEntry): string | null {
+  const req = entry.request;
+  if (!req || typeof req !== "object") return null;
+  const r = req as { model?: unknown; imageModel?: unknown };
+  if (typeof r.imageModel === "string") return r.imageModel;
+  if (typeof r.model === "string") return r.model;
+  return null;
+}
+
 function RawIOTab({ rawLog }: { rawLog?: LocalRawLogEntry[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const rows = rawLog ? [...rawLog].reverse() : [];
@@ -272,7 +282,8 @@ function RawIOTab({ rawLog }: { rawLog?: LocalRawLogEntry[] }) {
   if (rows.length === 0) {
     return (
       <p className="text-zinc-600">
-        No raw traffic captured yet — make a request with Dev mode on.
+        No raw traffic captured yet — send a message or run a step first. The
+        buffer holds the last 20 requests of this session (reloads clear it).
       </p>
     );
   }
@@ -288,6 +299,9 @@ function RawIOTab({ rawLog }: { rawLog?: LocalRawLogEntry[] }) {
             <span className="font-mono text-violet-400">{expanded === i ? "▾" : "▸"}</span>
             <span className="text-zinc-500">[{fmtTime(entry.at)}]</span>
             <span className="font-mono">{entry.step}</span>
+            {modelOf(entry) && (
+              <span className="font-mono text-violet-400/80">{modelOf(entry)}</span>
+            )}
           </button>
           {expanded === i && (
             <div className="grid grid-cols-1 gap-2 border-t border-zinc-800 p-2 md:grid-cols-2">
