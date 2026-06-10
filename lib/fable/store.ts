@@ -1,18 +1,26 @@
 // Fable Bench — IndexedDB persistence.
 //
-// A NEW database "fable-bench" with one object store "projects" keyed by id and
-// indexed by-updatedAt. This is deliberately separate from the existing
-// "asset-arsenal" DB (lib/storage/db.ts) — we never touch that one.
+// The database "fable-bench" (deliberately separate from the existing
+// "asset-arsenal" DB in lib/storage/db.ts — we never touch that one) holds
+// "projects" (the JSON documents) plus "images" (raw blobs, owned by
+// lib/fable/images.ts — the shared connection lives there too).
 //
-// Projects embed data-URL images directly inside the JSON, so we store the whole
-// FableProject object as-is. Best-effort error handling: failures are swallowed
-// (logged) so a missing/blocked IndexedDB never crashes the workspace.
+// Image fields on the document are opaque refs ("idb-image:<uuid>") into the
+// blob store; legacy projects still embed data URLs and are migrated lazily on
+// open (migrateProjectImages). saveProject deliberately accepts EITHER shape —
+// an old in-memory project mid-session may still carry data URLs, and
+// stripping them synchronously here would risk losing pixels.
+//
+// Best-effort error handling: failures are swallowed (logged) so a
+// missing/blocked IndexedDB never crashes the workspace.
 
-import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { deleteImagesForProject, getFableDB, putImageDataUrl } from "./images";
 import {
   approvedSource,
   DEFAULT_FABLE_MODEL_CONFIG,
+  type FableEvent,
   type FableProject,
+  type FableSourceImage,
   type FableStage,
   type FableUsageRecord,
 } from "./types";
@@ -31,35 +39,6 @@ export type FableProjectSummary = {
   };
 };
 
-interface FableBenchDB extends DBSchema {
-  projects: {
-    key: string;
-    value: FableProject;
-    indexes: { "by-updatedAt": string };
-  };
-}
-
-let _dbPromise: Promise<IDBPDatabase<FableBenchDB>> | null = null;
-
-function getDB(): Promise<IDBPDatabase<FableBenchDB>> {
-  if (typeof indexedDB === "undefined") {
-    throw new Error(
-      "Fable Bench: IndexedDB is not available. The store must only be used in a browser context.",
-    );
-  }
-  if (!_dbPromise) {
-    _dbPromise = openDB<FableBenchDB>("fable-bench", 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains("projects")) {
-          const store = db.createObjectStore("projects", { keyPath: "id" });
-          store.createIndex("by-updatedAt", "updatedAt");
-        }
-      },
-    });
-  }
-  return _dbPromise;
-}
-
 /** Records persisted before `models` existed get the defaults backfilled. */
 function withDefaults(p: FableProject): FableProject {
   return p.models ? p : { ...p, models: { ...DEFAULT_FABLE_MODEL_CONFIG } };
@@ -70,22 +49,75 @@ function isEmptyProject(p: FableProject): boolean {
   return p.events.length === 0 && !p.original && p.improved.length === 0;
 }
 
-/** Persist the whole project as-is (data URLs included). Best-effort. */
+/** Persist the whole project as-is. Best-effort. Safety net: image fields are
+ *  normally refs, but a document still carrying raw `data:` URLs (an old
+ *  in-memory project mid-session) is saved verbatim — never stripped
+ *  synchronously; it gets slimmed by migrateProjectImages on its next open. */
 export async function saveProject(p: FableProject): Promise<void> {
   try {
-    const db = await getDB();
+    const db = await getFableDB();
     await db.put("projects", p);
   } catch (err) {
     console.error("[fable/store] saveProject failed", err);
   }
 }
 
-/** Load one project by id, or null if missing / on error. */
+/** Lazy migration: move every embedded `data:` image (original, improved[],
+ *  sheets[], finals[], user_message events) into the blob store and replace it
+ *  with a ref. Candidate sourceCrops stay inline by design (≤256px, tiny).
+ *  Best-effort per image: a failed blob write keeps that data URL inline. */
+export async function migrateProjectImages(
+  p: FableProject,
+): Promise<{ project: FableProject; changed: boolean }> {
+  let changed = false;
+  const put = async (dataUrl: string): Promise<string> => {
+    try {
+      const ref = await putImageDataUrl(p.id, dataUrl);
+      changed = true;
+      return ref;
+    } catch (err) {
+      console.error("[fable/store] image migration write failed — keeping inline", err);
+      return dataUrl;
+    }
+  };
+  const migrateSource = async (s: FableSourceImage): Promise<FableSourceImage> =>
+    s.imageUrl.startsWith("data:") ? { ...s, imageUrl: await put(s.imageUrl) } : s;
+
+  const original = p.original ? await migrateSource(p.original) : p.original;
+  const improved: FableSourceImage[] = [];
+  for (const s of p.improved) improved.push(await migrateSource(s));
+  const sheets = [];
+  for (const s of p.sheets) {
+    sheets.push(s.imageUrl.startsWith("data:") ? { ...s, imageUrl: await put(s.imageUrl) } : s);
+  }
+  const finals = [];
+  for (const f of p.finals) {
+    finals.push(f.imageUrl.startsWith("data:") ? { ...f, imageUrl: await put(f.imageUrl) } : f);
+  }
+  const events: FableEvent[] = [];
+  for (const e of p.events) {
+    events.push(
+      e.kind === "user_message" && e.imageUrl?.startsWith("data:")
+        ? { ...e, imageUrl: await put(e.imageUrl) }
+        : e,
+    );
+  }
+  if (!changed) return { project: p, changed: false };
+  return { project: { ...p, original, improved, sheets, finals, events }, changed: true };
+}
+
+/** Load one project by id, or null if missing / on error. This is the
+ *  open-for-editing path (Sidebar → openProject), so legacy embedded data-URL
+ *  images are migrated to blob refs here and the slimmed document persisted
+ *  immediately. listProjects deliberately does NOT migrate (cheap listing). */
 export async function loadProject(id: string): Promise<FableProject | null> {
   try {
-    const db = await getDB();
+    const db = await getFableDB();
     const p = await db.get("projects", id);
-    return p ? withDefaults(p) : null;
+    if (!p) return null;
+    const { project, changed } = await migrateProjectImages(withDefaults(p));
+    if (changed) await db.put("projects", project);
+    return project;
   } catch (err) {
     console.error("[fable/store] loadProject failed", err);
     return null;
@@ -96,10 +128,13 @@ export async function loadProject(id: string): Promise<FableProject | null> {
  *  rows (no events, no image) are garbage-collected on the way through. */
 export async function listProjects(): Promise<FableProjectSummary[]> {
   try {
-    const db = await getDB();
+    const db = await getFableDB();
     const all = await db.getAllFromIndex("projects", "by-updatedAt");
     const empties = all.filter(isEmptyProject);
-    for (const p of empties) void db.delete("projects", p.id);
+    for (const p of empties) {
+      void db.delete("projects", p.id);
+      void deleteImagesForProject(p.id); // mirror the project-delete cleanup
+    }
     return all
       .filter((p) => !isEmptyProject(p))
       .slice()
@@ -132,7 +167,7 @@ export type FableProjectUsage = { projectId: string; usage: FableUsageRecord[] }
 
 export async function getAllUsage(): Promise<FableProjectUsage[]> {
   try {
-    const db = await getDB();
+    const db = await getFableDB();
     const all = await db.getAll("projects");
     return all.map((p) => ({ projectId: p.id, usage: p.usage ?? [] }));
   } catch (err) {
@@ -149,15 +184,19 @@ export type FableRecentImage = {
   projectName: string;
   kind: "source" | "sheet" | "final";
   name: string;
-  imageUrl: string; // data URL
+  /** Image ref ("idb-image:<id>") for migrated projects, or a data URL for
+   *  legacy ones — consumers resolve via lib/fable/images (getDisplayUrl for
+   *  thumbnails, resolveToBlob to attach). */
+  imageUrl: string;
   createdAt: string;
 };
 
 /** Newest-first images (sources, sheets, successful finals) across every saved
- *  project. Best-effort: returns [] on error. */
+ *  project. `imageUrl` values are refs-or-data-urls — see FableRecentImage.
+ *  Best-effort: returns [] on error. */
 export async function listRecentImages(limit = 12): Promise<FableRecentImage[]> {
   try {
-    const db = await getDB();
+    const db = await getFableDB();
     const all = await db.getAll("projects");
     const out: FableRecentImage[] = [];
     for (const p of all) {
@@ -213,11 +252,12 @@ export async function listRecentImages(limit = 12): Promise<FableRecentImage[]> 
   }
 }
 
-/** Delete a project. Best-effort. */
+/** Delete a project AND its stored image blobs. Best-effort. */
 export async function deleteProject(id: string): Promise<void> {
   try {
-    const db = await getDB();
+    const db = await getFableDB();
     await db.delete("projects", id);
+    await deleteImagesForProject(id);
   } catch (err) {
     console.error("[fable/store] deleteProject failed", err);
   }

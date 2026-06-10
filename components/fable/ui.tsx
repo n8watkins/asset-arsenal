@@ -5,6 +5,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
+import { resolveToDataUrl } from "@/lib/fable/images";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableStage } from "@/lib/fable/types";
 
@@ -185,7 +186,8 @@ export function Lightbox({
   downloadName?: string;
   onClose: () => void;
 }) {
-  // Data URLs are converted to object URLs for display + open-in-new-tab.
+  // Image refs / data URLs are resolved to object URLs for display +
+  // open-in-new-tab (undefined while a ref is still loading).
   const displaySrc = useObjectUrl(src);
 
   useEffect(() => {
@@ -221,7 +223,14 @@ export function Lightbox({
       >
         {caption && <span className="mr-1 text-sm text-zinc-300">{caption}</span>}
         <button
-          onClick={() => downloadDataUrl(src, `${slugify(downloadName ?? caption ?? "image")}.png`)}
+          // `src` may be a stored-image ref — resolve to bytes before download.
+          onClick={() => {
+            void resolveToDataUrl(src)
+              .then((d) => downloadDataUrl(d, `${slugify(downloadName ?? caption ?? "image")}.png`))
+              .catch(() => {
+                /* missing stored image — nothing to download */
+              });
+          }}
           className="rounded-lg bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-cyan-200 ring-1 ring-cyan-500/40 hover:bg-cyan-500/25"
         >
           ⤓ Download

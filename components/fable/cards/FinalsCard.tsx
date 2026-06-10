@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
 import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
+import { resolveToDataUrl } from "@/lib/fable/images";
 import { totalCostUSD } from "@/lib/fable/pricing";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableFinalIcon, FableOp, FableProject } from "@/lib/fable/types";
@@ -45,13 +46,25 @@ export default function FinalsCard({
   const allOk = finals.length > 0 && finals.every((f) => f.status === "success");
   const cost = totalCostUSD(project.usage, "openai");
   const [enlarged, setEnlarged] = useState<FableFinalIcon | null>(null);
+  const [zipping, setZipping] = useState(false);
 
-  function downloadAll() {
+  async function downloadAll() {
     // One zip (STORE-only, lib/zip.ts) instead of N separate downloads.
-    const entries = zipEntriesFromDataUrls(
-      successes.filter((f) => f.imageUrl).map((f) => ({ name: f.name, dataUrl: f.imageUrl })),
-    );
-    downloadZip(`${slugify(project.name)}.zip`, entries);
+    // imageUrl values may be stored-image refs — resolve everything to data
+    // URLs first (the button is disabled while building, see below).
+    setZipping(true);
+    try {
+      const items = await Promise.all(
+        successes
+          .filter((f) => f.imageUrl)
+          .map(async (f) => ({ name: f.name, dataUrl: await resolveToDataUrl(f.imageUrl) })),
+      );
+      downloadZip(`${slugify(project.name)}.zip`, zipEntriesFromDataUrls(items));
+    } catch (err) {
+      console.error("[fable] zip build failed", err);
+    } finally {
+      setZipping(false);
+    }
   }
 
   return (
@@ -89,8 +102,12 @@ export default function FinalsCard({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <CardAction tone="cyan" onClick={downloadAll} disabled={successes.length === 0}>
-          ⤓ Download all (.zip)
+        <CardAction
+          tone="cyan"
+          onClick={() => void downloadAll()}
+          disabled={zipping || successes.length === 0}
+        >
+          ⤓ {zipping ? "Building zip…" : "Download all (.zip)"}
         </CardAction>
         {allOk && project.stage !== "complete" && (
           <CardAction tone="emerald" onClick={onSaveFinish} disabled={busy}>
@@ -199,7 +216,14 @@ function FinalCell({
         <div className="flex gap-1">
           {/* B13: icon buttons (titles + aria-labels preserved). */}
           <button
-            onClick={() => downloadDataUrl(final.imageUrl, `${slugify(final.name)}.png`)}
+            // imageUrl may be a stored-image ref — resolve to bytes first.
+            onClick={() => {
+              void resolveToDataUrl(final.imageUrl)
+                .then((d) => downloadDataUrl(d, `${slugify(final.name)}.png`))
+                .catch(() => {
+                  /* missing stored image — nothing to download */
+                });
+            }}
             title="Download PNG"
             aria-label={`Download ${final.name} as PNG`}
             className="flex-1 rounded bg-cyan-500/15 px-1.5 py-1 text-[11px] text-cyan-300 ring-1 ring-cyan-500/30 hover:bg-cyan-500/25"

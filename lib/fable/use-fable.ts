@@ -50,6 +50,7 @@ import {
   type PreviewSheet,
 } from "./types";
 import { listProjects, saveProject } from "./store";
+import { putImageDataUrl, resolveToDataUrl } from "./images";
 import { getFableSettings } from "./settings";
 import { archiveImage } from "./gallery-sync";
 import { cropFromDataUrl } from "./crops";
@@ -156,6 +157,22 @@ function isEmptyProject(p: FableProject): boolean {
   return p.events.length === 0 && !p.original && p.improved.length === 0;
 }
 
+/** Move freshly generated/uploaded pixels into the blob store and return the
+ *  ref to put in the document. Pixels are precious: if the blob write fails,
+ *  fall back to embedding the data URL inline (the legacy shape every consumer
+ *  still tolerates) rather than losing a paid generation.
+ *
+ *  CROSS-CHAT SAFETY: callers pass the captured `pid`, never
+ *  projectRef.current.id — blobs always land under the originating project. */
+async function storeImage(pid: string, dataUrl: string): Promise<string> {
+  try {
+    return await putImageDataUrl(pid, dataUrl);
+  } catch (err) {
+    console.error("[fable] image blob write failed — keeping the data URL inline", err);
+    return dataUrl;
+  }
+}
+
 // Intents that should adopt a NEW image attached mid-project (B7).
 const SOURCE_ACTING_INTENTS = new Set(["upgrade_source", "use_source_as_is", "revise_source"]);
 
@@ -168,7 +185,8 @@ export type FableBusy = { step: FableStepKey | null; detail: string };
 export type PendingDecision = {
   decision: FableDecision;
   text: string;
-  /** New image attached on the turn that produced this decision. */
+  /** New image attached on the turn that produced this decision — a stored
+   *  image ref ("idb-image:<id>"), or an inline data URL fallback. */
   imageUrl?: string | null;
   /** Custom executor for synthetic cost-confirm gates; overrides executeDecision. */
   run?: (projectId: string) => Promise<void>;
@@ -478,8 +496,10 @@ export function useFable(): UseFable {
     async (pid: string, sourceImageUrl: string, instruction: string): Promise<void> => {
       const { models } = projectRef.current;
       setBusyFor(pid, { step: "improve_source_image", detail: "Upgrading your source…" });
+      // Stored sources are image refs — the API route needs raw pixels.
+      const sourceDataUrl = await resolveToDataUrl(sourceImageUrl);
       const res = await postImproveSource({
-        imageBase64: sourceImageUrl,
+        imageBase64: sourceDataUrl,
         instruction,
         model: models.analysis,
         imageModel: models.image,
@@ -488,10 +508,11 @@ export function useFable(): UseFable {
       });
       pushRaw("improve_source_image", res.debugRaw);
       appendUsage(pid, res.usage);
+      // Blob FIRST, then the tiny ref into the document, then flush below.
       const improved: FableSourceImage = {
         id: uid(),
         kind: "improved",
-        imageUrl: res.imageBase64,
+        imageUrl: await storeImage(pid, res.imageBase64),
         prompt: res.imagePrompt,
         critique: res.critique,
         createdAt: now(),
@@ -534,8 +555,11 @@ export function useFable(): UseFable {
         const active = p0.candidates.filter((c) => c.status === "active");
         if (!src || active.length === 0) return;
 
+        // Resolve the (possibly ref'd) source ONCE — used for the API call
+        // and for every client-side crop below.
+        const srcDataUrl = await resolveToDataUrl(src.imageUrl);
         const res = await postLocateIcons({
-          imageBase64: src.imageUrl,
+          imageBase64: srcDataUrl,
           candidates: active.map((c) => ({ id: c.id, name: c.name, concept: c.concept })),
           model: p0.models.analysis,
           debug: wantDebug(),
@@ -550,7 +574,7 @@ export function useFable(): UseFable {
             crops.set(id, { crop: null, box: null });
             continue;
           }
-          crops.set(id, { crop: await cropFromDataUrl(src.imageUrl, box), box });
+          crops.set(id, { crop: await cropFromDataUrl(srcDataUrl, box), box });
         }
 
         mutateFor(pid, (p) => ({
@@ -586,7 +610,8 @@ export function useFable(): UseFable {
       if (!src) throw new Error("No source image to analyze yet.");
       setBusyFor(pid, { step: "analyze", detail: "Extracting style + icon candidates…" });
       const res = await postAnalyze({
-        imageBase64: src.imageUrl,
+        imageBase64: await resolveToDataUrl(src.imageUrl), // refs → raw pixels
+
         guidance: guidance || undefined,
         model: p0.models.analysis,
         debug: wantDebug(),
@@ -642,6 +667,9 @@ export function useFable(): UseFable {
       // Sheet indices continue past any existing (non-superseded) sheets.
       let nextIndex = p0.sheets.reduce((m, s) => Math.max(m, s.index), 0) + 1;
 
+      // Resolve the (possibly ref'd) source ONCE for every sheet in the run.
+      const srcDataUrl = await resolveToDataUrl(src.imageUrl);
+
       for (let i = 0; i < chunks.length; i++) {
         if (!isCurrent(pid)) return; // chat switched — stop spending
         const chunk = chunks[i];
@@ -651,7 +679,7 @@ export function useFable(): UseFable {
           detail: `Rendering preview sheet ${i + 1} of ${chunks.length}…`,
         });
         const res = await postPreviewSheet({
-          referenceImageBase64: src.imageUrl,
+          referenceImageBase64: srcDataUrl,
           style,
           sharedStylePrompt,
           icons: chunk.map((c) => ({
@@ -668,10 +696,11 @@ export function useFable(): UseFable {
         });
         pushRaw("preview_image", res.debugRaw);
         appendUsage(pid, res.usage);
+        // Blob FIRST, then the tiny ref into the document, then flush below.
         const sheet: PreviewSheet = {
           id: uid(),
           index: sheetIndex,
-          imageUrl: res.imageBase64,
+          imageUrl: await storeImage(pid, res.imageBase64),
           prompt: res.sheetPrompt,
           iconIds: chunk.map((c) => c.id),
           grid: res.grid,
@@ -713,7 +742,7 @@ export function useFable(): UseFable {
       const sheetIndex = p0.sheets.reduce((m, s) => Math.max(m, s.index), 0) + 1;
       setBusyFor(pid, { step: "preview_image", detail: "Rendering another sheet variant…" });
       const res = await postPreviewSheet({
-        referenceImageBase64: src.imageUrl,
+        referenceImageBase64: await resolveToDataUrl(src.imageUrl), // refs → pixels
         style: p0.style,
         sharedStylePrompt: p0.sharedStylePrompt,
         icons: chunk.map((c) => ({
@@ -731,10 +760,11 @@ export function useFable(): UseFable {
       });
       pushRaw("preview_image", res.debugRaw);
       appendUsage(pid, res.usage);
+      // Blob FIRST, then the tiny ref into the document, then flush below.
       const sheet: PreviewSheet = {
         id: uid(),
         index: sheetIndex,
-        imageUrl: res.imageBase64,
+        imageUrl: await storeImage(pid, res.imageBase64),
         prompt: res.sheetPrompt,
         iconIds: chunk.map((c) => c.id),
         grid: res.grid,
@@ -784,16 +814,24 @@ export function useFable(): UseFable {
       for (const iconId of iconIds) {
         const prev = p0.finals.find((f) => f.iconId === iconId);
         if (prev?.status === "success" && prev.imageUrl) {
-          void archiveImage({
-            dataUrl: prev.imageUrl,
-            name: prev.name,
-            bench: "fable",
-            projectId: pid,
-            projectName: p0.name,
-            step: "final_icon",
-            category: "icon",
-            prompt: prev.prompt,
-          });
+          // The outgoing final's imageUrl is usually a blob ref — the gallery
+          // only ever receives raw data URLs, so resolve first (best-effort).
+          void resolveToDataUrl(prev.imageUrl)
+            .then((dataUrl) =>
+              archiveImage({
+                dataUrl,
+                name: prev.name,
+                bench: "fable",
+                projectId: pid,
+                projectName: p0.name,
+                step: "final_icon",
+                category: "icon",
+                prompt: prev.prompt,
+              }),
+            )
+            .catch(() => {
+              /* missing blob — nothing to pre-archive */
+            });
         }
       }
 
@@ -850,8 +888,10 @@ export function useFable(): UseFable {
         }));
         try {
           const res = await postFinalIcon({
-            referenceImageBase64:
+            // Sheet/source refs → raw pixels for the API route.
+            referenceImageBase64: await resolveToDataUrl(
               ref?.imageUrl ?? approvedSource(projectRef.current)?.imageUrl ?? "",
+            ),
             sharedStylePrompt,
             icon: {
               id: cand.id,
@@ -870,10 +910,18 @@ export function useFable(): UseFable {
           });
           pushRaw("final_icon", res.debugRaw);
           appendUsage(pid, res.usage);
+          // Blob FIRST, then the tiny ref into the document, then flush below.
+          const stored: FableFinalIcon = {
+            ...res.final,
+            imageUrl:
+              res.final.status === "success" && res.final.imageUrl
+                ? await storeImage(pid, res.final.imageUrl)
+                : res.final.imageUrl,
+          };
           const next = mutateFor(pid, (p) => ({
             ...p,
             finals: p.finals.map((f) =>
-              f.iconId === iconId ? { ...res.final } : f,
+              f.iconId === iconId ? { ...stored } : f,
             ),
           }));
           // Generated pixels are precious — flush to IndexedDB immediately
@@ -1150,7 +1198,8 @@ export function useFable(): UseFable {
 
       // B7: a NEW image arrived mid-project and the intent acts on the source →
       // adopt the new image as the latest source version (SourceCard's version
-      // strip) so everything below works from it.
+      // strip) so everything below works from it. `newImageUrl` is the stored
+      // ref sendMessage already created (or an inline data URL fallback).
       let turnSource: FableSourceImage | null = null;
       if (newImageUrl && p0.original && SOURCE_ACTING_INTENTS.has(decision.intent)) {
         turnSource = {
@@ -1165,15 +1214,22 @@ export function useFable(): UseFable {
         }));
         p0 = next ?? p0;
         // W1: adopted mid-project uploads are user images → gallery "source".
-        void archiveImage({
-          dataUrl: turnSource.imageUrl,
-          name: "attached source",
-          bench: "fable",
-          projectId: pid,
-          projectName: p0.name,
-          step: "upload",
-          category: "source",
-        });
+        // The gallery only ever receives raw data URLs — resolve the ref.
+        void resolveToDataUrl(turnSource.imageUrl)
+          .then((dataUrl) =>
+            archiveImage({
+              dataUrl,
+              name: "attached source",
+              bench: "fable",
+              projectId: pid,
+              projectName: p0.name,
+              step: "upload",
+              category: "source",
+            }),
+          )
+          .catch(() => {
+            /* missing blob — nothing to archive */
+          });
       }
 
       // B9: after analyze the blueprint is a CONVERSATION, not a gate — invite
@@ -1313,7 +1369,10 @@ export function useFable(): UseFable {
       // Claim busy SYNCHRONOUSLY so a double-Enter can't race past the gate.
       setBusyAll({ step: "agent_route", detail: "Thinking…" });
 
+      // The raw data URL stays in hand for the agent call + gallery archive;
+      // the DOCUMENT only ever gets the blob-store ref (pixels first).
       let imageDataUrl: string | null = null;
+      let imageRef: string | null = null;
       if (imageFile) {
         try {
           imageDataUrl = await fileToDataUrl(imageFile);
@@ -1323,23 +1382,24 @@ export function useFable(): UseFable {
           setBusyFor(pid, { step: null, detail: "" });
           return;
         }
+        imageRef = await storeImage(pid, imageDataUrl); // falls back to inline
       }
       if (!isCurrent(pid)) return; // switched chats while reading the file
 
       const hadOriginal = !!projectRef.current.original;
       // First image becomes the project's original source.
-      if (imageDataUrl && !hadOriginal) {
+      if (imageRef && !hadOriginal) {
         const original: FableSourceImage = {
           id: uid(),
           kind: "original",
-          imageUrl: imageDataUrl,
+          imageUrl: imageRef,
           fileName: imageFile?.name,
           createdAt: now(),
         };
         mutateFor(pid, (p) => ({ ...p, original }));
         // W1: the user's upload lands in the global gallery as a source.
         void archiveImage({
-          dataUrl: imageDataUrl,
+          dataUrl: imageDataUrl!,
           name: imageFile?.name ?? "original source",
           bench: "fable",
           projectId: pid,
@@ -1349,14 +1409,14 @@ export function useFable(): UseFable {
         });
       }
       // A second (or later) image rode this turn — the agent + executor adopt it.
-      const newImageThisTurn = !!imageDataUrl && hadOriginal;
-      const turnImage = newImageThisTurn ? imageDataUrl : null;
+      const newImageThisTurn = !!imageRef && hadOriginal;
+      const turnImage = newImageThisTurn ? imageRef : null;
 
       appendEvent(pid, {
         kind: "user_message",
         text,
-        imageAttached: !!imageDataUrl,
-        imageUrl: imageDataUrl ?? undefined,
+        imageAttached: !!imageRef,
+        imageUrl: imageRef ?? undefined,
       });
 
       let decision: FableDecision;

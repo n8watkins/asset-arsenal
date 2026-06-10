@@ -154,7 +154,8 @@ export type FableStateSummary = {
 export type FableSourceImage = {
   id: string;
   kind: "original" | "improved";
-  imageUrl: string; // data URL
+  /** Image ref ("idb-image:<id>", lib/fable/images.ts) or a legacy data URL. */
+  imageUrl: string;
   fileName?: string;
   /** For improved sources: the OpenAI image prompt that produced it. */
   prompt?: string;
@@ -190,7 +191,9 @@ export type IconCandidate = {
   prompt: string; //    per-icon generation prompt (style-grounded)
   status: "active" | "removed";
   /** B15 (experimental, sourceCrops setting): small data-URL crop of this icon
-   *  cut out of the approved source image (≤256px longest edge). */
+   *  cut out of the approved source image (≤256px longest edge). Deliberately
+   *  stays INLINE (never a blob-store ref): it's tiny, and final-icon requests
+   *  send it verbatim as sourceCropBase64. */
   sourceCrop?: string;
   /** B15: the normalized box the crop came from (kept for re-crops/debugging). */
   sourceBox?: IconSourceBox | null;
@@ -199,7 +202,7 @@ export type IconCandidate = {
 export type PreviewSheet = {
   id: string;
   index: number; //          sheet 1, sheet 2, …
-  imageUrl: string; //       data URL
+  imageUrl: string; //       image ref ("idb-image:<id>") or legacy data URL
   prompt: string; //         full prompt sent to the image model
   iconIds: string[]; //      row-major order — cell (r,c) = iconIds[r*cols + c]
   grid: { rows: number; cols: number };
@@ -212,7 +215,7 @@ export type FableFinalIcon = {
   iconId: string; //   the candidate it renders, e.g. "icon_004"
   name: string;
   prompt: string; //   the final wrapped prompt actually sent
-  imageUrl: string; // data URL once generated, "" until then
+  imageUrl: string; // image ref ("idb-image:<id>") or legacy data URL once generated, "" until then
   model: string;
   quality: ImageQuality;
   status: "pending" | "generating" | "success" | "failed";
@@ -266,7 +269,8 @@ export type FableEvent =
       kind: "user_message";
       text: string;
       imageAttached: boolean;
-      /** Data URL of the attached image, so the chat bubble can render it. */
+      /** The attached image — an image ref ("idb-image:<id>") or a legacy
+       *  data URL — so the chat bubble can render it (via useObjectUrl). */
       imageUrl?: string;
     }
   | { id: string; at: string; kind: "assistant"; text: string }

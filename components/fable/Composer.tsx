@@ -16,21 +16,28 @@
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { IMAGE_UPLOAD_LIMITS } from "@/lib/icon/models";
 import GalleryPicker from "@/components/gallery/GalleryPicker";
+import { resolveToBlob } from "@/lib/fable/images";
 import { listRecentImages, type FableRecentImage } from "@/lib/fable/store";
+import { useObjectUrl } from "@/lib/fable/use-object-url";
 
-/** Decode a data URL into a File so picked images ride the normal attach flow. */
-function dataUrlToFile(dataUrl: string, name: string): File | null {
-  try {
-    const [head, body] = dataUrl.split(",");
-    if (!body) return null;
-    const mime = /^data:([^;,]+)/.exec(head)?.[1] ?? "image/png";
-    const bin = atob(body);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new File([bytes], name, { type: mime });
-  } catch {
-    return null;
-  }
+/** One Recent-menu thumbnail. Recent imageUrls are stored-image refs for
+ *  migrated projects (data URLs for legacy ones) — useObjectUrl resolves both. */
+function RecentThumb({ item, onPick }: { item: FableRecentImage; onPick: () => void }) {
+  const src = useObjectUrl(item.imageUrl);
+  return (
+    <button
+      onClick={onPick}
+      className="overflow-hidden rounded-lg border border-zinc-800 transition-colors hover:border-cyan-500/60"
+      title={`${item.name} · ${item.projectName}`}
+    >
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={item.name} className="aspect-square w-full object-cover" />
+      ) : (
+        <div className="aspect-square w-full animate-pulse bg-zinc-800" />
+      )}
+    </button>
+  );
 }
 
 export type ComposerHandle = {
@@ -99,9 +106,11 @@ function Composer(
     };
   }, [menuOpen]);
 
-  function attachDataUrl(dataUrl: string, name: string) {
-    const f = dataUrlToFile(dataUrl, name);
-    if (f) setImage(f);
+  /** Attach a picked image (gallery data URL or recent-image blob ref) as a
+   *  File so it rides the normal attach flow. */
+  async function attachImage(refOrDataUrl: string, name: string) {
+    const blob = await resolveToBlob(refOrDataUrl);
+    if (blob) setImage(new File([blob], name, { type: blob.type || "image/png" }));
     setMenuOpen(false);
   }
 
@@ -216,7 +225,7 @@ function Composer(
               <GalleryPicker
                 label="🗂 From gallery…"
                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-zinc-800 hover:text-cyan-200"
-                onPick={(img) => attachDataUrl(img.dataUrl, img.fileName)}
+                onPick={(img) => void attachImage(img.dataUrl, img.fileName)}
               />
 
               <div className="mt-1 border-t border-zinc-800 px-3 pb-1.5 pt-2">
@@ -230,19 +239,11 @@ function Composer(
                 ) : (
                   <div className="grid grid-cols-4 gap-1.5 pb-1">
                     {recent.map((r, i) => (
-                      <button
+                      <RecentThumb
                         key={`${r.projectId}-${r.createdAt}-${i}`}
-                        onClick={() => attachDataUrl(r.imageUrl, r.name)}
-                        className="overflow-hidden rounded-lg border border-zinc-800 transition-colors hover:border-cyan-500/60"
-                        title={`${r.name} · ${r.projectName}`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={r.imageUrl}
-                          alt={r.name}
-                          className="aspect-square w-full object-cover"
-                        />
-                      </button>
+                        item={r}
+                        onPick={() => void attachImage(r.imageUrl, r.name)}
+                      />
                     ))}
                   </div>
                 )}

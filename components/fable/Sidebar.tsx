@@ -12,7 +12,18 @@ import {
   type FableProjectSummary,
 } from "@/lib/fable/store";
 import type { FableProject } from "@/lib/fable/types";
+import { useObjectUrl } from "@/lib/fable/use-object-url";
 import { fmtRelative, Pill, STAGE_LABELS } from "./ui";
+
+/** History-row thumbnail. thumbUrl is a stored-image ref for migrated
+ *  projects or a data URL for legacy ones (listProjects doesn't migrate) —
+ *  useObjectUrl tolerates both shapes. */
+function Thumb({ url }: { url: string }) {
+  const src = useObjectUrl(url);
+  if (!src) return null; // ref still resolving (or missing) — keep the slab
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" className="h-full w-full object-cover" />;
+}
 
 export default function Sidebar({
   open,
@@ -115,10 +126,7 @@ export default function Sidebar({
                 }`}
               >
                 <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md bg-zinc-800 ring-1 ring-zinc-800">
-                  {p.thumbUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.thumbUrl} alt="" className="h-full w-full object-cover" />
-                  )}
+                  {p.thumbUrl && <Thumb url={p.thumbUrl} />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-zinc-200">{p.name}</p>

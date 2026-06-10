@@ -5,8 +5,10 @@
 // download of every successful final. The assets themselves remain browsable
 // in the FinalsCard above this in the feed.
 
+import { useState } from "react";
 import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
 import { slugify } from "@/lib/icon/download";
+import { resolveToDataUrl } from "@/lib/fable/images";
 import { totalCostUSD } from "@/lib/fable/pricing";
 import type { FableProject } from "@/lib/fable/types";
 import { ArtifactCard, CardAction, fmtUsd, Pill } from "../ui";
@@ -14,13 +16,24 @@ import { ArtifactCard, CardAction, fmtUsd, Pill } from "../ui";
 export default function CompletionCard({ project }: { project: FableProject }) {
   const finals = project.finals.filter((f) => f.status === "success");
   const sheets = project.sheets.filter((s) => s.status !== "superseded").length;
+  const [zipping, setZipping] = useState(false);
 
-  function downloadAll() {
+  async function downloadAll() {
     // One zip (STORE-only, lib/zip.ts) instead of N separate downloads.
-    const entries = zipEntriesFromDataUrls(
-      finals.filter((f) => f.imageUrl).map((f) => ({ name: f.name, dataUrl: f.imageUrl })),
-    );
-    downloadZip(`${slugify(project.name)}.zip`, entries);
+    // imageUrl values may be stored-image refs — resolve to data URLs first.
+    setZipping(true);
+    try {
+      const items = await Promise.all(
+        finals
+          .filter((f) => f.imageUrl)
+          .map(async (f) => ({ name: f.name, dataUrl: await resolveToDataUrl(f.imageUrl) })),
+      );
+      downloadZip(`${slugify(project.name)}.zip`, zipEntriesFromDataUrls(items));
+    } catch (err) {
+      console.error("[fable] zip build failed", err);
+    } finally {
+      setZipping(false);
+    }
   }
 
   return (
@@ -35,8 +48,12 @@ export default function CompletionCard({ project }: { project: FableProject }) {
         <Stat label="Total cost" value={fmtUsd(totalCostUSD(project.usage))} />
       </div>
       <div className="mt-3">
-        <CardAction tone="cyan" onClick={downloadAll} disabled={finals.length === 0}>
-          ⤓ Download all (.zip)
+        <CardAction
+          tone="cyan"
+          onClick={() => void downloadAll()}
+          disabled={zipping || finals.length === 0}
+        >
+          ⤓ {zipping ? "Building zip…" : "Download all (.zip)"}
         </CardAction>
       </div>
     </ArtifactCard>

@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { slugify } from "@/lib/icon/download";
 import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
+import { resolveToDataUrl } from "@/lib/fable/images";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableProject, FableSourceImage } from "@/lib/fable/types";
 import { CardAction, Lightbox, Pill, STAGE_LABELS } from "./ui";
@@ -23,6 +24,7 @@ type LightboxState = { src: string; caption: string; downloadName?: string };
 
 export default function ProjectView({ project }: { project: FableProject }) {
   const [enlarged, setEnlarged] = useState<LightboxState | null>(null);
+  const [zipping, setZipping] = useState(false);
 
   const sources: FableSourceImage[] = [
     ...(project.original ? [project.original] : []),
@@ -30,11 +32,20 @@ export default function ProjectView({ project }: { project: FableProject }) {
   ];
   const successes = project.finals.filter((f) => f.status === "success" && f.imageUrl);
 
-  function downloadAllZip() {
-    const entries = zipEntriesFromDataUrls(
-      successes.map((f) => ({ name: f.name, dataUrl: f.imageUrl })),
-    );
-    downloadZip(`${slugify(project.name)}.zip`, entries);
+  async function downloadAllZip() {
+    // imageUrl values may be stored-image refs — resolve to data URLs first
+    // (button disabled while building).
+    setZipping(true);
+    try {
+      const items = await Promise.all(
+        successes.map(async (f) => ({ name: f.name, dataUrl: await resolveToDataUrl(f.imageUrl) })),
+      );
+      downloadZip(`${slugify(project.name)}.zip`, zipEntriesFromDataUrls(items));
+    } catch (err) {
+      console.error("[fable] zip build failed", err);
+    } finally {
+      setZipping(false);
+    }
   }
 
   return (
@@ -49,8 +60,12 @@ export default function ProjectView({ project }: { project: FableProject }) {
           created {new Date(project.createdAt).toLocaleDateString()}
         </span>
         <div className="ml-auto">
-          <CardAction tone="cyan" onClick={downloadAllZip} disabled={successes.length === 0}>
-            ⤓ Download all (.zip)
+          <CardAction
+            tone="cyan"
+            onClick={() => void downloadAllZip()}
+            disabled={zipping || successes.length === 0}
+          >
+            ⤓ {zipping ? "Building zip…" : "Download all (.zip)"}
           </CardAction>
         </div>
       </div>
@@ -271,7 +286,8 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="px-1 py-2 text-xs text-zinc-600">{children}</p>;
 }
 
-/** A data-URL image rendered via object URL, click-to-zoom into the Lightbox. */
+/** A stored image (ref or data URL) rendered via object URL, click-to-zoom
+ *  into the Lightbox. */
 function Zoomable({
   src,
   alt,
