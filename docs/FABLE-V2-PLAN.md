@@ -55,12 +55,19 @@ code; root causes are noted where found.
    tag adopted versions or filter by `kind`). Replace Before/After **tabs**
    with a **side-by-side** two-up grid (original | improved), each pane
    clickable to the lightbox.
-8. **Client-side downscale.** In `fileToDataUrl`, decode via
-   `createImageBitmap` and, if the longest edge exceeds 2048px, draw to a
-   canvas at 2048 max edge (PNG for transparency, JPEG quality 0.92
-   otherwise) before producing the data URL. Cuts payloads, IndexedDB bloat,
-   and OpenAI upload size in one place. Show "downscaled from 4032×3024" as a
-   chip note.
+8. **Client-side downscale — as a SETTING.** New `lib/fable/settings.ts`:
+   localStorage-backed global Fable settings
+   (`{ downscaleMaxEdge: 0 | 1024 | 2048, sourceCrops: boolean }`, defaults
+   `1024` / `true`) with a `useFableSettings()` hook. In `fileToDataUrl`,
+   when `downscaleMaxEdge > 0` and the longest edge exceeds it, decode via
+   `createImageBitmap` and draw to a canvas at that max edge (PNG for
+   transparency, JPEG q0.92 otherwise). Show "downscaled from 4032×3024" as
+   a chip note. **Cost research (June 2026):** OpenAI already downscales
+   inputs server-side (shortest side → 512px, longest capped 2048px) and
+   bills 65 + 129/tile tokens at $10/1M — ≈$0.002 for a ≤1024² input vs
+   ≈$0.006 max. So the savings are pennies; the real wins are payload size,
+   IndexedDB bloat, and upload speed. Settings UI ships in Workstream D;
+   until then defaults apply.
 
 ## Workstream B — Agent depth: blueprint dialogue, sheets, finals, transparency
 **Files:** `lib/fable/use-fable.ts`, `lib/fable/types.ts`,
@@ -94,12 +101,17 @@ code; root causes are noted where found.
     transparent-styled sheets accordingly; SheetCard/FinalsCard get a backdrop
     swatch picker (checkerboard default, any hex) — display-only CSS, no
     regeneration needed to recolor the view.
-15. **Source-icon crops (experimental).** New step `locate_icons`: Gemini
-    vision returns normalized bounding boxes for each blueprint candidate on
-    the approved source; client crops via canvas; crops render on the
-    BlueprintCard per candidate and are offered as the per-icon reference
-    image for finals ("rebuild from the original pixels"). Cheap (one
-    flash-lite call), clearly feasible — Gemini supports box detection.
+15. **Source-icon crops (experimental, behind the `sourceCrops` settings
+    flag, default ON).** New step `locate_icons`: ONE Gemini vision call
+    sends the approved source + the full candidate list and returns one
+    structured response with a normalized bounding box (or null) per icon
+    id — **a single request for all icons, not one per icon**. Client crops
+    via canvas (free). Each crop renders **to the left of the candidate's
+    name/concept text** on the BlueprintCard, and is offered as the per-icon
+    reference image for finals ("rebuild from the original pixels"). Re-run
+    (one more call) only when candidates change or the source is swapped.
+    Owner intent: Fable is the experiment platform — wire it up, flag it,
+    keep or remove later.
 16. **Title dedupe.** When applying `suggestedTitle`/styleName, check
     `listProjects()` names; suffix `(2)`, `(3)`… on collision.
 
@@ -185,13 +197,24 @@ Hard file boundaries; one agent per workstream, two phases because
 
 - **Phase 1 (parallel):**
   - Agent 1 → Workstream A
-  - Agent 2 → Workstream C (gallery/zip/project view; touches no A files
-    except a tiny Composer plus-menu — do the menu as its own follow-up
-    commit after A lands, or behind a separate component file)
-  - Agent 3 → Workstream E
+  - Agent 2 → Workstream C, **minus** anything in A's or shared hook files:
+    builds `lib/zip.ts`, `lib/fable/gallery-sync.ts` (functions only),
+    store.ts additions, additive `lib/storage/db.ts`/`repo.ts` fields,
+    gallery project filter, `ProjectView.tsx` (component only), zip buttons
+    on FinalsCard/CompletionCard. Deferred to Phase 2: calling gallery-sync
+    from `use-fable.ts`, wiring ProjectView into the page header, the
+    Composer plus-menu.
+  - Agent 3 → Workstream E, **without editing `lib/fable/store.ts`** (join
+    project names via the existing `listProjects()` read) and deferring the
+    one-line `projectName` addition to the `logUsage` call in `use-fable.ts`
+    to Phase 2.
 - **Phase 2 (parallel, after Phase 1 commits):**
-  - Agent 4 → Workstream B
-  - Agent 5 → Workstream D
+  - Agent 4 → Workstream B + the deferred wiring above (owns
+    `lib/fable/**`, `app/api/fable/**`, cards)
+  - Agent 5 → Workstream D (owns `DevDrawer`, new `ModelSettings`/settings
+    UI incl. downscale + sourceCrops toggles, `Composer` plus-menu,
+    `app/fable/page.tsx` wiring) — does NOT edit `lib/fable/**` or routes;
+    integration seams reconciled at review.
 
 Verification gate for every agent: `npx tsc --noEmit` clean; manual smoke of
 the touched surface; commit per workstream. **No edits outside the listed
@@ -201,8 +224,12 @@ files; never touch other benches' pages or behavior.**
 
 - **Do we downscale images before OpenAI?** No — nothing in the chain resizes
   (client reads the file verbatim; `imageBase64ToFile` just re-encodes).
-  Fixed by A8.
+  OpenAI downscales server-side to 2048 max edge and bills by 512px tiles:
+  ≈$0.002 per ≤1024² input vs ≈$0.006 max, so client downscaling saves
+  pennies but fixes payload/storage bloat. A8 makes it a setting
+  (Off / 1024 / 2048, default 1024).
 - **Can we crop a candidate icon out of the original source?** Yes — preview
   sheets use deterministic grid math (we *generated* the layout), but for
-  arbitrary sources Gemini vision bounding-box detection works. Planned as
-  B15 (experimental).
+  arbitrary sources Gemini vision bounding-box detection works. ONE call for
+  all candidates, cropping is free client-side canvas. Planned as B15,
+  behind the `sourceCrops` settings flag.
