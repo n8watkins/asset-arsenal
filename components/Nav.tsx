@@ -11,6 +11,7 @@ type Tab = { href: string; label: string };
 // Home is reached via the brand (top-left), so it's not a tab. Backlog is
 // folded into /roadmap.
 const TABS: Tab[] = [
+  { href: "/fable", label: "Fable" },
   { href: "/gallery", label: "Gallery" },
   { href: "/bench-router", label: "Router" },
   { href: "/bench-s", label: "Bench S" },
