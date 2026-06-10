@@ -6,7 +6,7 @@
 // metadata.
 
 import { getDB } from "@/lib/storage/db";
-import type { StepKey, ImageQuality } from "@/lib/icon/model-reference";
+import type { ImageQuality } from "@/lib/icon/model-reference";
 
 // The actual output a call produced, stored alongside the request so /usage is a
 // results history, not just a call log. Text is stored in full; images are
@@ -23,7 +23,10 @@ export function summarizeText(text: string): UsageResult {
 export type UsageEntry = {
   id: string;
   at: string; // ISO timestamp
-  step: StepKey;
+  // Bench-local step key. The original 5-step pipeline uses StepKey from
+  // model-reference; fable uses FableStepKey; other benches may add their own.
+  // The /usage page labels known keys and falls back to the raw string.
+  step: string;
   model: string;
   kind: "text" | "image";
   quality?: ImageQuality;
@@ -35,6 +38,13 @@ export type UsageEntry = {
   ok: boolean;
   error?: string;
   result?: UsageResult;
+  // Which surface made the call. Absent on pre-2026-06 entries, which all came
+  // from the original icon pipeline benches (V1/V2/S + home) — treat as "pipeline".
+  bench?: "pipeline" | "fable" | "experiments" | string;
+  provider?: "openai" | "gemini";
+  /** Fable: the chat/project this call belonged to. */
+  projectId?: string;
+  durationMs?: number;
 };
 
 /** Every call ever logged, newest-first. Best-effort: returns [] on any error. */

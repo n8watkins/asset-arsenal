@@ -14,7 +14,7 @@ export const REFERENCE_ACCESSED = "2026-06-08";
 
 export type Citation = { label: string; url: string };
 
-export type Provider = "OpenAI"; // future: "Google" | "BlackForestLabs" | ...
+export type Provider = "OpenAI" | "Google"; // future: "BlackForestLabs" | ...
 
 // What a model can do / what a step needs. Steps list required + preferred caps.
 export type Capability =
@@ -48,6 +48,9 @@ export type CatalogModel = {
   imagePricing?: { low: number; medium: number; high: number };
   status: ModelStatus;
   deprecation?: { since: string; shutdown: string };
+  // We currently call this model on a free tier — realized cost is $0 even if
+  // paid-tier tokenPricing is listed. One switch to flip when we go paid.
+  freeTier?: boolean;
   note?: string;
   citations: Citation[];
 };
@@ -59,6 +62,7 @@ export type CatalogModel = {
 
 const PRICING: Citation = { label: "Pricing", url: "https://developers.openai.com/api/docs/pricing" };
 const DEPRECATIONS: Citation = { label: "Deprecations", url: "https://developers.openai.com/api/docs/deprecations" };
+const GEMINI_MODELS_DOC: Citation = { label: "Gemini models", url: "https://ai.google.dev/gemini-api/docs/models" };
 
 export const CATALOG: CatalogModel[] = [
   // --- Text / vision ---
@@ -182,6 +186,40 @@ export const CATALOG: CatalogModel[] = [
     status: "current",
     note: "Only non-deprecated image model — but does NOT support transparent backgrounds (breaks transparent icons).",
     citations: [{ label: "Model page", url: "https://developers.openai.com/api/docs/models/gpt-image-2" }, PRICING],
+  },
+
+  // --- Google (Gemini) — text/vision, used by fable + router + judges --------
+  // All on the free tier today (realized cost $0); no paid tokenPricing listed
+  // until we actually move tiers, so cost helpers correctly return 0.
+  {
+    id: "gemini-3.1-flash-lite",
+    provider: "Google",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    status: "current",
+    freeTier: true,
+    note: "Cheapest Gemini tier; default for routing/classification and fable analysis.",
+    citations: [GEMINI_MODELS_DOC],
+  },
+  {
+    id: "gemini-3.1-flash",
+    provider: "Google",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    status: "current",
+    freeTier: true,
+    note: "Stronger reasoning than Flash-Lite; still free-tier.",
+    citations: [GEMINI_MODELS_DOC],
+  },
+  {
+    id: "gemini-3.1-pro",
+    provider: "Google",
+    kind: "text",
+    capabilities: ["text", "vision", "structuredOutput"],
+    status: "current",
+    freeTier: true,
+    note: "Strongest Gemini; for close-call judging.",
+    citations: [GEMINI_MODELS_DOC],
   },
 ];
 

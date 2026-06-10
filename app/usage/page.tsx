@@ -25,6 +25,39 @@ const STEP_LABEL: Record<StepKey, string> = STEPS.reduce(
   {} as Record<StepKey, string>,
 );
 
+// Fable's step keys (FableStepKey in lib/fable/types.ts). Kept as plain strings
+// so this page never imports fable code.
+const FABLE_STEP_LABEL: Record<string, string> = {
+  agent_route: "Fable · route intent",
+  improve_source_brief: "Fable · upgrade brief",
+  improve_source_image: "Fable · upgrade source",
+  analyze: "Fable · analyze style", // only when bench === "fable"
+  revise_prompts: "Fable · revise prompts",
+  preview_image: "Fable · preview sheet",
+  final_icon: "Fable · final icon",
+  chat_title: "Fable · title chat",
+};
+
+function stepLabel(e: { step: string; bench?: string }): string {
+  if (e.bench === "fable") return FABLE_STEP_LABEL[e.step] ?? `Fable · ${e.step}`;
+  return STEP_LABEL[e.step as StepKey] ?? e.step;
+}
+
+/** Label a bench-qualified rollup key ("fable:analyze" or plain "analyze"). */
+function rollupStepLabel(key: string): string {
+  if (key.startsWith("fable:")) {
+    const step = key.slice("fable:".length);
+    return FABLE_STEP_LABEL[step] ?? `Fable · ${step}`;
+  }
+  return STEP_LABEL[key as StepKey] ?? key;
+}
+
+const BENCH_LABEL: Record<string, string> = {
+  pipeline: "Icon pipeline (V1/V2/S + home)",
+  fable: "Fable",
+  experiments: "Experiments",
+};
+
 // Pipeline position of each step, so the per-step rollup reads top-to-bottom in
 // run order (1→5) instead of by cost. Unknown steps sort last.
 const STEP_ORDER: Record<string, number> = STEPS.reduce(
@@ -51,19 +84,27 @@ function rollupBy(entries: UsageEntry[], pick: (e: UsageEntry) => string): Rollu
     const key = pick(e);
     const r = map.get(key) ?? { key, count: 0, cost: 0 };
     r.count += 1;
-    r.cost += e.realizedCost ?? e.estCost;
+    // Same accounting as the "Realized cost" headline, so cards never sum to
+    // more than the total they sit under.
+    r.cost += e.realizedCost ?? 0;
     map.set(key, r);
   }
   return [...map.values()].sort((a, b) => b.cost - a.cost);
 }
 
+/** Which surface an entry came from; entries predating the field are "pipeline". */
+function benchOf(e: UsageEntry): string {
+  return e.bench ?? "pipeline";
+}
+
 // ---------------------------------------------------------------------------
 
 export default function UsagePage() {
-  const [entries, setEntries] = useState<UsageEntry[]>([]);
+  const [allEntries, setAllEntries] = useState<UsageEntry[]>([]);
+  const [benchFilter, setBenchFilter] = useState<string>("all");
 
   function refresh() {
-    loadUsage().then(setEntries);
+    loadUsage().then(setAllEntries);
   }
 
   useEffect(() => {
@@ -78,16 +119,23 @@ export default function UsagePage() {
     refresh();
   }
 
+  const benches = [...new Set(allEntries.map(benchOf))];
+  const entries =
+    benchFilter === "all" ? allEntries : allEntries.filter((e) => benchOf(e) === benchFilter);
+
   const totalCalls = entries.length;
   const totalEst = entries.reduce((s, e) => s + e.estCost, 0);
   const totalRealized = entries.reduce((s, e) => s + (e.realizedCost ?? 0), 0);
   const hasPartialRealized = entries.some((e) => e.ok && e.realizedCost == null);
 
-  // Per step in pipeline order (1→5); per model stays sorted by cost.
-  const byStep = rollupBy(entries, (e) => e.step).sort(
-    (a, b) => (STEP_ORDER[a.key] ?? 99) - (STEP_ORDER[b.key] ?? 99),
-  );
+  // Per step in pipeline order (1→5), fable steps after; per model stays sorted
+  // by cost. Fable reuses the key "analyze" with a different meaning, so steps
+  // roll up under a bench-qualified key.
+  const byStep = rollupBy(entries, (e) =>
+    benchOf(e) === "fable" ? `fable:${e.step}` : e.step,
+  ).sort((a, b) => (STEP_ORDER[a.key] ?? 99) - (STEP_ORDER[b.key] ?? 99));
   const byModel = rollupBy(entries, (e) => e.model);
+  const byBench = rollupBy(allEntries, benchOf);
 
   return (
     <>
@@ -98,11 +146,12 @@ export default function UsagePage() {
           <div className="flex flex-col gap-3">
             <h1 className="text-3xl font-bold">API Usage</h1>
             <p className="max-w-2xl text-base text-zinc-400">
-              Every call to OpenAI made from this browser — its estimated and
-              realized cost <em>and the result it produced</em> (prompts/manifests
-              in full; generated images saved to the gallery). Stored in your
-              browser&apos;s local database (IndexedDB, same as the gallery) —
-              full history, no cap, nothing leaves your device.
+              Every model call made from this browser — OpenAI and Gemini, across
+              all benches including Fable — its estimated and realized cost{" "}
+              <em>and the result it produced</em> (prompts/manifests in full;
+              generated images saved to the gallery). Stored in your browser&apos;s
+              local database (IndexedDB, same as the gallery) — full history, no
+              cap, nothing leaves your device.
             </p>
             <Link
               href="/models"
@@ -111,6 +160,25 @@ export default function UsagePage() {
               → see the cost model on Models
             </Link>
           </div>
+
+          {/* Bench filter */}
+          {benches.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {["all", ...benches].map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setBenchFilter(b)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition-colors ${
+                    benchFilter === b
+                      ? "bg-cyan-900/40 text-cyan-200 ring-cyan-600/50"
+                      : "bg-zinc-900 text-zinc-400 ring-zinc-700/60 hover:text-zinc-200"
+                  }`}
+                >
+                  {b === "all" ? "All benches" : (BENCH_LABEL[b] ?? b)}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Totals — realized is the source of truth (actual billed tokens);
               the estimate is just a muted pre-flight reference. */}
@@ -152,8 +220,13 @@ export default function UsagePage() {
           {/* Breakdown */}
           {entries.length > 0 && (
             <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <RollupCard title="Per step" rows={byStep} label={(k) => STEP_LABEL[k as StepKey] ?? k} />
+              <RollupCard title="Per step" rows={byStep} label={rollupStepLabel} />
               <RollupCard title="Per model" rows={byModel} mono />
+              <RollupCard
+                title="Per bench (all entries)"
+                rows={byBench}
+                label={(k) => BENCH_LABEL[k] ?? k}
+              />
             </section>
           )}
 
@@ -201,7 +274,7 @@ export default function UsagePage() {
                           {fmtTime(e.at)}
                         </td>
                         <td className="px-3 py-2 text-zinc-300">
-                          {STEP_LABEL[e.step] ?? e.step}
+                          {stepLabel(e)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-zinc-300">
                           {e.model}
