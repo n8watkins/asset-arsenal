@@ -141,6 +141,78 @@ export async function getAllUsage(): Promise<FableProjectUsage[]> {
   }
 }
 
+// ---- Recent images (for the composer plus-menu "Recent"; wired in Phase 2) --
+
+/** One recent image across all fable projects. */
+export type FableRecentImage = {
+  projectId: string;
+  projectName: string;
+  kind: "source" | "sheet" | "final";
+  name: string;
+  imageUrl: string; // data URL
+  createdAt: string;
+};
+
+/** Newest-first images (sources, sheets, successful finals) across every saved
+ *  project. Best-effort: returns [] on error. */
+export async function listRecentImages(limit = 12): Promise<FableRecentImage[]> {
+  try {
+    const db = await getDB();
+    const all = await db.getAll("projects");
+    const out: FableRecentImage[] = [];
+    for (const p of all) {
+      if (p.original?.imageUrl) {
+        out.push({
+          projectId: p.id,
+          projectName: p.name,
+          kind: "source",
+          name: p.original.fileName ?? "original source",
+          imageUrl: p.original.imageUrl,
+          createdAt: p.original.createdAt,
+        });
+      }
+      for (const s of p.improved) {
+        if (!s.imageUrl) continue;
+        out.push({
+          projectId: p.id,
+          projectName: p.name,
+          kind: "source",
+          name: "improved source",
+          imageUrl: s.imageUrl,
+          createdAt: s.createdAt,
+        });
+      }
+      for (const sh of p.sheets) {
+        if (!sh.imageUrl) continue;
+        out.push({
+          projectId: p.id,
+          projectName: p.name,
+          kind: "sheet",
+          name: `sheet ${sh.index}`,
+          imageUrl: sh.imageUrl,
+          createdAt: sh.createdAt,
+        });
+      }
+      for (const f of p.finals) {
+        if (f.status !== "success" || !f.imageUrl) continue;
+        out.push({
+          projectId: p.id,
+          projectName: p.name,
+          kind: "final",
+          name: f.name,
+          imageUrl: f.imageUrl,
+          createdAt: f.createdAt,
+        });
+      }
+    }
+    out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return out.slice(0, limit);
+  } catch (err) {
+    console.error("[fable/store] listRecentImages failed", err);
+    return [];
+  }
+}
+
 /** Delete a project. Best-effort. */
 export async function deleteProject(id: string): Promise<void> {
   try {

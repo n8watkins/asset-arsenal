@@ -1,16 +1,28 @@
 "use client";
 
 // Fable Bench — completion artifact card (inline in the chat feed).
-// A compact summary once the project is saved: counts + total cost. The assets
-// themselves remain browsable in the FinalsCard above this in the feed.
+// A compact summary once the project is saved: counts + total cost + a one-zip
+// download of every successful final. The assets themselves remain browsable
+// in the FinalsCard above this in the feed.
 
+import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
+import { slugify } from "@/lib/icon/download";
 import { totalCostUSD } from "@/lib/fable/pricing";
 import type { FableProject } from "@/lib/fable/types";
-import { ArtifactCard, fmtUsd, Pill } from "../ui";
+import { ArtifactCard, CardAction, fmtUsd, Pill } from "../ui";
 
 export default function CompletionCard({ project }: { project: FableProject }) {
   const finals = project.finals.filter((f) => f.status === "success");
   const sheets = project.sheets.filter((s) => s.status !== "superseded").length;
+
+  function downloadAll() {
+    // One zip (STORE-only, lib/zip.ts) instead of N separate downloads.
+    const entries = zipEntriesFromDataUrls(
+      finals.filter((f) => f.imageUrl).map((f) => ({ name: f.name, dataUrl: f.imageUrl })),
+    );
+    downloadZip(`${slugify(project.name)}.zip`, entries);
+  }
+
   return (
     <ArtifactCard title="Pack complete" badge={<Pill tone="emerald">done</Pill>}>
       <p className="text-sm text-zinc-300">
@@ -21,6 +33,11 @@ export default function CompletionCard({ project }: { project: FableProject }) {
         <Stat label="Icons" value={String(finals.length)} />
         <Stat label="Sheets" value={String(sheets)} />
         <Stat label="Total cost" value={fmtUsd(totalCostUSD(project.usage))} />
+      </div>
+      <div className="mt-3">
+        <CardAction tone="cyan" onClick={downloadAll} disabled={finals.length === 0}>
+          ⤓ Download all (.zip)
+        </CardAction>
       </div>
     </ArtifactCard>
   );

@@ -30,6 +30,20 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+// ---- Gallery provenance (additive) ----
+
+/**
+ * Optional provenance describing which bench / project / pipeline step produced
+ * a stored record. All fields are optional — records saved without it behave
+ * exactly as before (the gallery only segments when a project filter is chosen).
+ */
+export type GalleryMeta = {
+  bench?: string;
+  projectId?: string;
+  projectName?: string;
+  step?: string;
+};
+
 // ---- Sources ----
 
 /**
@@ -39,7 +53,8 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
  */
 export async function saveSource(
   source: SourceImage,
-  category?: StoredSource["category"]
+  category?: StoredSource["category"],
+  meta?: GalleryMeta
 ): Promise<void> {
   const blob = await dataUrlToBlob(source.imageUrl);
   const db = await getDB();
@@ -51,6 +66,7 @@ export async function saveSource(
     height: source.height,
     uploadedAt: source.uploadedAt,
     category,
+    ...meta,
     blob,
   };
   await db.put("sources", record);
@@ -168,7 +184,8 @@ export async function deleteRun(id: string): Promise<void> {
  */
 export async function saveIcon(
   icon: GeneratedIcon,
-  runId: string
+  runId: string,
+  meta?: GalleryMeta
 ): Promise<void> {
   if (icon.status !== "success") {
     throw new Error(
@@ -192,9 +209,59 @@ export async function saveIcon(
     modelUsed: icon.modelUsed,
     status: icon.status,
     createdAt: icon.createdAt,
+    ...meta,
     blob,
   };
   await db.put("icons", record);
+}
+
+/**
+ * Archive an arbitrary image Blob into the gallery (additive — used by Fable's
+ * gallery-sync). Routing matches how the gallery groups records:
+ * - category "icon" → the icons store (AI-generated group, checkerboard tile),
+ *   with synthesized run/prompt fields since no pipeline run exists;
+ * - anything else → the sources store under that category ("icon-collection"
+ *   → AI-generated group, "elevated" → AI-elevated badge, etc.).
+ */
+export async function archiveGalleryBlob(args: {
+  blob: Blob;
+  name: string;
+  category: StoredSource["category"];
+  meta?: GalleryMeta;
+  /** Optional generation prompt, kept on icon records. */
+  prompt?: string;
+}): Promise<void> {
+  const db = await getDB();
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  if (args.category === "icon") {
+    const record: StoredIcon = {
+      id,
+      runId: args.meta?.projectId
+        ? `${args.meta.bench ?? "archive"}:${args.meta.projectId}`
+        : "archive",
+      iconId: id,
+      iconName: args.name,
+      prompt: args.prompt ?? "",
+      modelUsed: args.meta?.bench ?? "archive",
+      status: "success",
+      createdAt: now,
+      ...args.meta,
+      blob: args.blob,
+    };
+    await db.put("icons", record);
+  } else {
+    const record: StoredSource = {
+      id,
+      fileName: args.name,
+      mimeType: args.blob.type || undefined,
+      uploadedAt: now,
+      category: args.category,
+      ...args.meta,
+      blob: args.blob,
+    };
+    await db.put("sources", record);
+  }
 }
 
 /** List all icons, newest first, each with a fresh object URL. */

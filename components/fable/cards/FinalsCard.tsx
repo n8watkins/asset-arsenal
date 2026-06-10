@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { downloadDataUrl, slugify } from "@/lib/icon/download";
+import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
 import { totalCostUSD } from "@/lib/fable/pricing";
 import { useObjectUrl } from "@/lib/fable/use-object-url";
 import type { FableFinalIcon, FableProject } from "@/lib/fable/types";
@@ -39,9 +40,11 @@ export default function FinalsCard({
   const [enlarged, setEnlarged] = useState<FableFinalIcon | null>(null);
 
   function downloadAll() {
-    for (const f of successes) {
-      if (f.imageUrl) downloadDataUrl(f.imageUrl, `${slugify(f.name)}.png`);
-    }
+    // One zip (STORE-only, lib/zip.ts) instead of N separate downloads.
+    const entries = zipEntriesFromDataUrls(
+      successes.filter((f) => f.imageUrl).map((f) => ({ name: f.name, dataUrl: f.imageUrl })),
+    );
+    downloadZip(`${slugify(project.name)}.zip`, entries);
   }
 
   return (
@@ -78,7 +81,7 @@ export default function FinalsCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <CardAction tone="cyan" onClick={downloadAll} disabled={successes.length === 0}>
-          ⤓ Download all
+          ⤓ Download all (.zip)
         </CardAction>
         {allOk && project.stage !== "complete" && (
           <CardAction tone="emerald" onClick={onSaveFinish} disabled={busy}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useLibrary } from "@/lib/icon/use-library";
 import { getSourceAsDataUrl, getIconAsDataUrl } from "@/lib/storage/repo";
@@ -60,6 +60,22 @@ function PickerDialog({
 }) {
   const { sources, icons, loading } = useLibrary();
   const [resolving, setResolving] = useState<string | null>(null);
+  // Project filter ("" = All projects → identical to the pre-filter picker).
+  const [projectFilter, setProjectFilter] = useState("");
+
+  const projectNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const s of sources) if (s.projectName) names.add(s.projectName);
+    for (const ic of icons) if (ic.projectName) names.add(ic.projectName);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [sources, icons]);
+
+  const visibleSources = projectFilter
+    ? sources.filter((s) => s.projectName === projectFilter)
+    : sources;
+  const visibleIcons = projectFilter
+    ? icons.filter((ic) => ic.projectName === projectFilter)
+    : icons;
 
   async function choose(
     id: string,
@@ -82,8 +98,8 @@ function PickerDialog({
 
   // Group consistently with GalleryView: collection images live in the sources
   // store but are AI-generated, so they list with the icons, not the uploads.
-  const uploadedSources = sources.filter((s) => s.category !== "icon-collection");
-  const collectionSources = sources.filter((s) => s.category === "icon-collection");
+  const uploadedSources = visibleSources.filter((s) => s.category !== "icon-collection");
+  const collectionSources = visibleSources.filter((s) => s.category === "icon-collection");
 
   return (
     <div
@@ -100,12 +116,29 @@ function PickerDialog({
           <h3 className="text-sm font-semibold text-zinc-100">
             Choose an image from the gallery
           </h3>
-          <button
-            onClick={onClose}
-            className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-          >
-            close ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {projectNames.length > 0 && (
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                aria-label="Filter by project"
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              >
+                <option value="">All projects</option>
+                {projectNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={onClose}
+              className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            >
+              close ✕
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-4">
@@ -149,7 +182,7 @@ function PickerDialog({
                     name: s.fileName ?? "Collection image",
                     kind: "source" as const,
                   })),
-                  ...icons.map((ic) => ({
+                  ...visibleIcons.map((ic) => ({
                     id: ic.id,
                     objectUrl: ic.objectUrl,
                     name: ic.iconName,

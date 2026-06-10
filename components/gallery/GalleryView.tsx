@@ -322,6 +322,10 @@ export default function GalleryView({
     useLibrary();
 
   const [dragOver, setDragOver] = useState(false);
+  // Project filter ("" = All projects → identical to the pre-filter gallery).
+  // Options come from distinct projectName values on loaded records; legacy
+  // records have none, so the dropdown only appears once a bench tags records.
+  const [projectFilter, setProjectFilter] = useState("");
   const [uploadResult, setUploadResult] = useState<{
     added: number;
     errors: string[];
@@ -331,13 +335,37 @@ export default function GalleryView({
   const [showUpload, setShowUpload] = useState(!compact && !readOnly);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const projectNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const s of sources) if (s.projectName) names.add(s.projectName);
+    for (const ic of icons) if (ic.projectName) names.add(ic.projectName);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [sources, icons]);
+
+  // Filter in memory before grouping; "" (All projects) passes everything
+  // through untouched, so unfiltered rendering is byte-identical to before.
+  const visibleSources = useMemo(
+    () =>
+      projectFilter
+        ? sources.filter((s) => s.projectName === projectFilter)
+        : sources,
+    [sources, projectFilter]
+  );
+  const visibleIcons = useMemo(
+    () =>
+      projectFilter
+        ? icons.filter((ic) => ic.projectName === projectFilter)
+        : icons,
+    [icons, projectFilter]
+  );
+
   // Uploaded sources vs. AI-generated collection images both live in the
   // "sources" store; the category tag separates them. Collection images are
   // AI-generated, so they render in the AI-generated group (kind stays "source"
   // so drag/use/delete still behave like a source).
   const uploadedImages = useMemo<GalleryImage[]>(
     () =>
-      sources
+      visibleSources
         .filter((s) => s.category !== "icon-collection")
         .map((s) => ({
           id: s.id,
@@ -349,12 +377,12 @@ export default function GalleryView({
           fileName: s.fileName ?? "Untitled",
           getDataUrl: () => getSourceAsDataUrl(s.id),
         })),
-    [sources]
+    [visibleSources]
   );
 
   const collectionImages = useMemo<GalleryImage[]>(
     () =>
-      sources
+      visibleSources
         .filter((s) => s.category === "icon-collection")
         .map((s) => ({
           id: s.id,
@@ -364,12 +392,12 @@ export default function GalleryView({
           fileName: s.fileName ?? "Collection image",
           getDataUrl: () => getSourceAsDataUrl(s.id),
         })),
-    [sources]
+    [visibleSources]
   );
 
   const iconImages = useMemo<GalleryImage[]>(
     () =>
-      icons.map((ic) => ({
+      visibleIcons.map((ic) => ({
         id: ic.id,
         kind: "icon" as const,
         origin: "ai" as const,
@@ -377,7 +405,7 @@ export default function GalleryView({
         fileName: ic.iconName,
         getDataUrl: () => getIconAsDataUrl(ic.id),
       })),
-    [icons]
+    [visibleIcons]
   );
 
   // AI-generated group = collection images first, then individual icons.
@@ -423,6 +451,21 @@ export default function GalleryView({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         {title && (
           <h3 className="text-zinc-100 font-semibold text-sm">{title}</h3>
+        )}
+        {projectNames.length > 0 && (
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            aria-label="Filter by project"
+            className="text-xs bg-zinc-900 text-zinc-300 border border-zinc-700 hover:border-zinc-500 rounded-lg px-2 py-1 transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          >
+            <option value="">All projects</option>
+            {projectNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
         )}
         {compact && !showUpload && !readOnly && (
           <button

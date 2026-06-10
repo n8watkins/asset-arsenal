@@ -33,6 +33,15 @@ export type StoredSource = {
    * source everywhere, but badged honestly in the gallery).
    */
   category?: "source" | "icon-collection" | "icon" | "elevated";
+  /**
+   * Optional provenance, same additive/schemaless pattern as `category` (no DB
+   * version bump): which bench / project / pipeline step produced this record.
+   * Older records simply have these undefined. Filtered in memory — no index.
+   */
+  bench?: string;
+  projectId?: string;
+  projectName?: string;
+  step?: string;
   blob: Blob;
 };
 
@@ -55,6 +64,11 @@ export type StoredIcon = {
   modelUsed: string;
   status: GeneratedIcon["status"];
   createdAt: string;
+  /** Optional provenance — see the same fields on StoredSource. */
+  bench?: string;
+  projectId?: string;
+  projectName?: string;
+  step?: string;
   blob: Blob;
 };
 
