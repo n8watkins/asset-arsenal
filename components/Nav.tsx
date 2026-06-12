@@ -13,6 +13,7 @@ type Tab = { href: string; label: string };
 const TABS: Tab[] = [
   { href: "/fable", label: "Fable" },
   { href: "/gallery", label: "Gallery" },
+  { href: "/sprite", label: "Sprite" },
   { href: "/bench-router", label: "Router" },
   { href: "/bench-s", label: "Bench S" },
   { href: "/bench", label: "Bench" },
