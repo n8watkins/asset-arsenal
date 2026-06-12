@@ -9,11 +9,14 @@ import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
 import { encodeGif } from "@/lib/sprite/gif";
 import {
   autoDetectGrid,
+  computeStabilizeTweaks,
   frameDims,
   sliceSpritesheet,
   MAX_FRAMES,
+  type FrameTweak,
   type GridSpec,
   type SlicedFrame,
+  type StabilizeAnchor,
 } from "@/lib/sprite/slice";
 
 // Sprite bench: slice a sprite sheet on a grid, preview the animation live,
@@ -55,10 +58,30 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
 }
 
+function gridToDraft(g: GridSpec): Record<keyof GridSpec, string> {
+  return {
+    rows: String(g.rows),
+    cols: String(g.cols),
+    offsetTop: String(g.offsetTop),
+    offsetBottom: String(g.offsetBottom),
+    offsetLeft: String(g.offsetLeft),
+    offsetRight: String(g.offsetRight),
+  };
+}
+
 export default function SpriteBench() {
   const [source, setSource] = useState<SourceSheet | null>(null);
   const [grid, setGrid] = useState<GridSpec>(DEFAULT_GRID);
+  // Inputs edit this string draft; grid only updates on valid numbers, so a
+  // field can sit empty while the user types a replacement.
+  const [draft, setDraft] = useState<Record<keyof GridSpec, string>>(() =>
+    gridToDraft(DEFAULT_GRID),
+  );
   const [frames, setFrames] = useState<SlicedFrame[]>([]);
+  const [tweaks, setTweaks] = useState<Map<number, FrameTweak>>(new Map());
+  const [order, setOrder] = useState<number[]>([]);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [anchor, setAnchor] = useState<StabilizeAnchor>("bottom");
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [skipBlank, setSkipBlank] = useState(true);
   const [fps, setFps] = useState(10);
@@ -135,10 +158,21 @@ export default function SpriteBench() {
       return;
     }
     setError(null);
-    setFrames(sliceSpritesheet(source.img, grid));
+    const sliced = sliceSpritesheet(source.img, grid);
+    setFrames(sliced);
+    setOrder(sliced.map((f) => f.index));
+    setTweaks(new Map());
+    setSelected(null);
     setExcluded(new Set());
     setGif(null);
   }, [source, grid]);
+
+  // Keep the input drafts in sync when the grid changes for other reasons
+  // (auto-detect, a committed keystroke). An empty draft never reaches here
+  // because invalid input doesn't update the grid.
+  useEffect(() => {
+    setDraft(gridToDraft(grid));
+  }, [grid]);
 
   // ---- Grid overlay on the sheet preview ----
   useEffect(() => {
@@ -172,10 +206,18 @@ export default function SpriteBench() {
     }
   }, [source, grid]);
 
-  // ---- Frame selection ----
-  const included = frames.filter(
-    (f) => !excluded.has(f.index) && !(skipBlank && f.blank),
-  );
+  // ---- Frame selection (in display order) ----
+  const included = order
+    .map((i) => frames[i])
+    .filter(
+      (f): f is SlicedFrame =>
+        !!f && !excluded.has(f.index) && !(skipBlank && f.blank),
+    );
+
+  const previewFrames = included.map((f) => ({
+    imageData: f.imageData,
+    hold: tweaks.get(f.index)?.hold ?? 1,
+  }));
 
   const toggleFrame = useCallback((index: number) => {
     setExcluded((prev) => {
@@ -195,6 +237,36 @@ export default function SpriteBench() {
     else setError("Couldn't auto-detect a grid — sprites may not have background gaps between them.");
   }, [source]);
 
+  // ---- Per-frame tweaks (nudge / hold / stabilize) ----
+  const applyTweaks = useCallback(
+    (next: Map<number, FrameTweak>) => {
+      if (!source) return;
+      setTweaks(next);
+      setFrames(sliceSpritesheet(source.img, grid, next));
+      setGif(null);
+    },
+    [source, grid],
+  );
+
+  const updateTweak = useCallback(
+    (index: number, patch: Partial<FrameTweak>) => {
+      const cur = tweaks.get(index) ?? { dx: 0, dy: 0, hold: 1 };
+      const merged = { ...cur, ...patch };
+      const next = new Map(tweaks);
+      if (merged.dx === 0 && merged.dy === 0 && merged.hold === 1) next.delete(index);
+      else next.set(index, merged);
+      applyTweaks(next);
+    },
+    [tweaks, applyTweaks],
+  );
+
+  const handleStabilize = useCallback(() => {
+    if (!source) return;
+    const computed = computeStabilizeTweaks(source.img, grid, anchor, tweaks);
+    if (computed) applyTweaks(computed);
+    else setError("Couldn't stabilize — need at least two frames with content.");
+  }, [source, grid, anchor, tweaks, applyTweaks]);
+
   // ---- Export ----
   const handleGenerate = useCallback(() => {
     if (included.length === 0) return;
@@ -211,6 +283,9 @@ export default function SpriteBench() {
           sequence.map((f) => f.imageData),
           {
             delayMs: 1000 / fps,
+            delaysMs: sequence.map(
+              (f) => (1000 / fps) * (tweaks.get(f.index)?.hold ?? 1),
+            ),
             transparent,
             background: hexToRgb(bgColor),
           },
@@ -225,7 +300,7 @@ export default function SpriteBench() {
         setBusy(false);
       }
     }, 30);
-  }, [included, fps, pingPong, transparent, bgColor]);
+  }, [included, fps, pingPong, transparent, bgColor, tweaks]);
 
   useEffect(
     () => () => {
@@ -254,8 +329,11 @@ export default function SpriteBench() {
   }, [source, included]);
 
   const setGridField = (field: keyof GridSpec, raw: string) => {
-    const v = Math.max(0, Number(raw) || 0);
-    setGrid((g) => ({ ...g, [field]: field === "rows" || field === "cols" ? Math.max(1, v) : v }));
+    setDraft((d) => ({ ...d, [field]: raw }));
+    const n = parseInt(raw, 10);
+    if (Number.isNaN(n)) return; // empty/partial input: keep the last valid grid
+    const v = field === "rows" || field === "cols" ? Math.max(1, n) : Math.max(0, n);
+    setGrid((g) => (g[field] === v ? g : { ...g, [field]: v }));
   };
 
   const numInput = (label: string, field: keyof GridSpec, min: number) => (
@@ -264,8 +342,9 @@ export default function SpriteBench() {
       <input
         type="number"
         min={min}
-        value={grid[field]}
+        value={draft[field]}
         onChange={(e) => setGridField(field, e.target.value)}
+        onBlur={() => setDraft((d) => ({ ...d, [field]: String(grid[field]) }))}
         className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-cyan-500 focus:outline-none"
       />
     </label>
@@ -377,6 +456,29 @@ export default function SpriteBench() {
                 />
                 Skip blank frames automatically
               </label>
+              <div className="mt-3 flex items-center gap-2 border-t border-zinc-800 pt-3">
+                <button
+                  type="button"
+                  onClick={handleStabilize}
+                  disabled={!source}
+                  title="Auto-align the sprite across frames so the animation doesn't jitter"
+                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:opacity-40"
+                >
+                  Stabilize frames
+                </button>
+                <select
+                  value={anchor}
+                  onChange={(e) => setAnchor(e.target.value as StabilizeAnchor)}
+                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-300 focus:border-cyan-500 focus:outline-none"
+                >
+                  <option value="bottom">anchor: feet (bottom)</option>
+                  <option value="center">anchor: center</option>
+                </select>
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Stabilize aligns each frame&apos;s content to a common anchor —
+                fixes sprites that drift around between cells.
+              </p>
             </section>
 
             {/* Export */}
@@ -495,7 +597,7 @@ export default function SpriteBench() {
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-400">
                 Live preview
               </h2>
-              <AnimationPreview frames={included} fps={fps} pingPong={pingPong} />
+              <AnimationPreview frames={previewFrames} fps={fps} pingPong={pingPong} />
             </section>
 
             {/* Sheet + grid overlay */}
@@ -528,29 +630,28 @@ export default function SpriteBench() {
                     Frames
                   </h2>
                   <span className="text-xs text-zinc-500">
-                    {included.length} of {frames.length} in animation — click to toggle
+                    {included.length} of {frames.length} in animation — click a frame to edit
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {frames.map((f) => {
+                  {order.map((idx) => {
+                    const f = frames[idx];
+                    if (!f) return null;
                     const skipped = skipBlank && f.blank;
                     const off = excluded.has(f.index) || skipped;
+                    const isSel = selected === f.index;
                     return (
                       <button
                         key={f.index}
                         type="button"
-                        onClick={() => !skipped && toggleFrame(f.index)}
-                        title={
-                          skipped
-                            ? "Blank frame (auto-skipped)"
-                            : off
-                              ? "Excluded — click to include"
-                              : "Included — click to exclude"
-                        }
+                        onClick={() => setSelected(isSel ? null : f.index)}
+                        title={skipped ? "Blank frame (auto-skipped)" : `Frame ${f.index + 1} — click to edit`}
                         className={`relative rounded-lg border p-0.5 transition-all ${
-                          off
-                            ? "border-zinc-800 opacity-30"
-                            : "border-cyan-500/50 hover:border-cyan-400"
+                          isSel
+                            ? "border-cyan-300 ring-2 ring-cyan-400/60"
+                            : off
+                              ? "border-zinc-800 opacity-30 hover:opacity-60"
+                              : "border-cyan-500/50 hover:border-cyan-400"
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -570,10 +671,126 @@ export default function SpriteBench() {
                             blank
                           </span>
                         )}
+                        {!skipped && excluded.has(f.index) && (
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-zinc-800 px-1 text-[9px] uppercase text-zinc-400">
+                            off
+                          </span>
+                        )}
+                        {tweaks.has(f.index) && (
+                          <span
+                            className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-400"
+                            title="Adjusted"
+                          />
+                        )}
                       </button>
                     );
                   })}
                 </div>
+
+                {selected !== null && frames[selected] && (() => {
+                  const f = frames[selected];
+                  const t = tweaks.get(selected) ?? { dx: 0, dy: 0, hold: 1 };
+                  const pos = order.indexOf(selected);
+                  const skipped = skipBlank && f.blank;
+                  const nudge = (dx: number, dy: number, step: number) =>
+                    updateTweak(selected, { dx: t.dx + dx * step, dy: t.dy + dy * step });
+                  const move = (dir: -1 | 1) => {
+                    const j = pos + dir;
+                    if (j < 0 || j >= order.length) return;
+                    const next = [...order];
+                    [next[pos], next[j]] = [next[j], next[pos]];
+                    setOrder(next);
+                    setGif(null);
+                  };
+                  const btn =
+                    "rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:opacity-40";
+                  return (
+                    <div className="mt-4 rounded-xl border border-zinc-700 bg-zinc-950/60 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-zinc-200">
+                          Frame {pos + 1}
+                          <span className="ml-2 text-xs font-normal text-zinc-500">
+                            cell {f.index + 1}{skipped ? " · blank" : ""}
+                          </span>
+                        </h3>
+                        <button type="button" onClick={() => setSelected(null)} className={btn}>
+                          Close
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-8 gap-y-4 text-sm text-zinc-300">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!excluded.has(f.index) && !skipped}
+                            disabled={skipped}
+                            onChange={() => toggleFrame(f.index)}
+                            className="accent-cyan-400"
+                          />
+                          In animation
+                        </label>
+                        <div className="flex items-center gap-2" title="Nudge the crop. Shift-click = 8px">
+                          <span className="text-xs text-zinc-500">Nudge</span>
+                          <button type="button" className={btn} onClick={(e) => nudge(-1, 0, e.shiftKey ? 8 : 1)}>←</button>
+                          <button type="button" className={btn} onClick={(e) => nudge(1, 0, e.shiftKey ? 8 : 1)}>→</button>
+                          <button type="button" className={btn} onClick={(e) => nudge(0, -1, e.shiftKey ? 8 : 1)}>↑</button>
+                          <button type="button" className={btn} onClick={(e) => nudge(0, 1, e.shiftKey ? 8 : 1)}>↓</button>
+                          <span className="text-xs tabular-nums text-zinc-500">
+                            dx {t.dx} · dy {t.dy}
+                          </span>
+                          {(t.dx !== 0 || t.dy !== 0) && (
+                            <button
+                              type="button"
+                              className={btn}
+                              onClick={() => updateTweak(selected, { dx: 0, dy: 0 })}
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2" title="How long this frame is shown">
+                          <span className="text-xs text-zinc-500">Duration</span>
+                          <button
+                            type="button"
+                            className={btn}
+                            disabled={t.hold <= 1}
+                            onClick={() => updateTweak(selected, { hold: Math.max(1, t.hold - 1) })}
+                          >
+                            −
+                          </button>
+                          <span className="text-xs tabular-nums text-zinc-400">
+                            ×{t.hold} ({Math.round((1000 / fps) * t.hold)}ms)
+                          </span>
+                          <button
+                            type="button"
+                            className={btn}
+                            disabled={t.hold >= 10}
+                            onClick={() => updateTweak(selected, { hold: Math.min(10, t.hold + 1) })}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2" title="Reorder this frame in the animation">
+                          <span className="text-xs text-zinc-500">Order</span>
+                          <button type="button" className={btn} disabled={pos <= 0} onClick={() => move(-1)}>
+                            ◀ earlier
+                          </button>
+                          <button
+                            type="button"
+                            className={btn}
+                            disabled={pos >= order.length - 1}
+                            onClick={() => move(1)}
+                          >
+                            later ▶
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs text-zinc-500">
+                        Tip: shift-click the nudge arrows to move 8px at a time. The
+                        cyan dot marks adjusted frames.
+                      </p>
+                    </div>
+                  );
+                })()}
               </section>
             )}
           </div>

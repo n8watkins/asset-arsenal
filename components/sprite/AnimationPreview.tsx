@@ -7,7 +7,8 @@ import { useEffect, useRef, useState } from "react";
 // and crisp pixel art read correctly.
 
 export interface AnimationPreviewProps {
-  frames: { imageData: ImageData }[];
+  /** hold = per-frame duration multiplier (default 1). */
+  frames: { imageData: ImageData; hold?: number }[];
   fps: number;
   pingPong: boolean;
 }
@@ -17,6 +18,11 @@ export default function AnimationPreview({ frames, fps, pingPong }: AnimationPre
   const [playing, setPlaying] = useState(true);
   const [index, setIndex] = useState(0);
   const dirRef = useRef(1);
+  // The playback clock reads the CURRENT frame's hold without re-subscribing.
+  const indexRef = useRef(0);
+  indexRef.current = index;
+  const framesRef = useRef(frames);
+  framesRef.current = frames;
 
   const count = frames.length;
   const frameW = count > 0 ? frames[0].imageData.width : 0;
@@ -33,21 +39,31 @@ export default function AnimationPreview({ frames, fps, pingPong }: AnimationPre
     let raf = 0;
     let last = performance.now();
     let acc = 0;
-    const interval = 1000 / Math.max(1, fps);
+    const base = 1000 / Math.max(1, fps);
     const tick = (t: number) => {
       acc += t - last;
       last = t;
+      // Interval depends on the current frame's hold, so advance via the ref
+      // (state updates are async) and re-read the hold after every step.
+      const holdAt = (i: number) => framesRef.current[i]?.hold ?? 1;
+      let interval = base * holdAt(indexRef.current);
       while (acc >= interval) {
         acc -= interval;
-        setIndex((i) => {
-          if (!pingPong) return (i + 1) % count;
-          let next = i + dirRef.current;
+        const i = indexRef.current;
+        let next: number;
+        if (!pingPong) {
+          next = (i + 1) % count;
+        } else {
+          next = i + dirRef.current;
           if (next < 0 || next >= count) {
             dirRef.current = -dirRef.current;
             next = i + dirRef.current;
           }
-          return Math.max(0, Math.min(count - 1, next));
-        });
+          next = Math.max(0, Math.min(count - 1, next));
+        }
+        indexRef.current = next;
+        setIndex(next);
+        interval = base * holdAt(next);
       }
       raf = requestAnimationFrame(tick);
     };

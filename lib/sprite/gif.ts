@@ -10,6 +10,8 @@
 export interface EncodeGifOptions {
   /** Per-frame delay in milliseconds (GIF resolution is 10ms). */
   delayMs: number;
+  /** Optional per-frame delays (parallel to frames); falls back to delayMs. */
+  delaysMs?: number[];
   /** Keep transparent pixels transparent; otherwise composite onto `background`. */
   transparent: boolean;
   /** [r,g,b] used when `transparent` is false. Default white. */
@@ -106,14 +108,16 @@ export function encodeGif(frames: ImageData[], opts: EncodeGifOptions): Blob {
   u8(0x03); u8(0x01); u16(0); u8(0x00);
 
   // GIF delays are centiseconds; many decoders treat <2 as "very slow".
-  const delayCs = Math.max(2, Math.round(opts.delayMs / 10));
+  const delayCs = (i: number) =>
+    Math.max(2, Math.round((opts.delaysMs?.[i] ?? opts.delayMs) / 10));
 
-  for (const p of prepped) {
+  for (let f = 0; f < prepped.length; f++) {
+    const p = prepped[f];
     // Graphic control extension
     u8(0x21); u8(0xf9); u8(0x04);
     // disposal 2 (restore to bg) keeps transparent frames from stacking
     u8(opts.transparent ? (2 << 2) | 1 : 1 << 2);
-    u16(delayCs);
+    u16(delayCs(f));
     u8(opts.transparent ? transIndex : 0);
     u8(0x00);
 
