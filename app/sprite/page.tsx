@@ -592,15 +592,8 @@ export default function SpriteBench() {
 
           {/* Right column: previews */}
           <div className="flex flex-col gap-6">
-            {/* Animation preview */}
-            <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                Live preview
-              </h2>
-              <AnimationPreview frames={previewFrames} fps={fps} pingPong={pingPong} />
-            </section>
-
-            {/* Sheet + grid overlay */}
+            {/* Sheet + grid overlay (compact, at the top so the preview can
+                stay pinned next to the frame editor below) */}
             {source && (
               <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
                 <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-400">
@@ -611,7 +604,7 @@ export default function SpriteBench() {
                   <img
                     src={source.dataUrl}
                     alt="Sprite sheet"
-                    className="max-w-full rounded-lg border border-zinc-800"
+                    className="max-h-64 max-w-full rounded-lg border border-zinc-800"
                     style={{ imageRendering: "pixelated" }}
                   />
                   <canvas
@@ -621,6 +614,15 @@ export default function SpriteBench() {
                 </div>
               </section>
             )}
+
+            {/* Animation preview — sticky so it stays in view while you
+                scroll/nudge individual frames underneath */}
+            <section className="sticky top-20 z-10 rounded-2xl border border-zinc-800 bg-zinc-900/80 p-5 backdrop-blur-md">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                Live preview
+              </h2>
+              <AnimationPreview frames={previewFrames} fps={fps} pingPong={pingPong} />
+            </section>
 
             {/* Frame strip */}
             {frames.length > 0 && (
