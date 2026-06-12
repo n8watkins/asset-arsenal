@@ -104,6 +104,10 @@ export default function SpriteBench() {
     try {
       const { dataUrl } = await readImageFile(file);
       const img = await loadImage(dataUrl);
+      // Auto-detect on load; quietly keep the current grid if nothing clean
+      // is found (the Auto-detect button re-runs it with feedback).
+      const detected = autoDetectGrid(img);
+      if (detected) setGrid(detected);
       setSource({
         dataUrl,
         img,
@@ -132,6 +136,8 @@ export default function SpriteBench() {
       setError(null);
       try {
         const el = await loadImage(img.dataUrl);
+        const detected = autoDetectGrid(el);
+        if (detected) setGrid(detected);
         setSource({
           dataUrl: img.dataUrl,
           img: el,
