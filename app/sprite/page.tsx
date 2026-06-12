@@ -7,10 +7,12 @@ import AnimationPreview from "@/components/sprite/AnimationPreview";
 import { readImageFile } from "@/lib/icon/download";
 import { downloadZip, zipEntriesFromDataUrls } from "@/lib/zip";
 import { encodeGif } from "@/lib/sprite/gif";
+import { makeDemoSheet, DEMO_NAME } from "@/lib/sprite/demo";
 import {
   autoDetectGrid,
   computeStabilizeTweaks,
   frameDims,
+  scaleImageData,
   sliceSpritesheet,
   MAX_FRAMES,
   type FrameTweak,
@@ -88,6 +90,7 @@ export default function SpriteBench() {
   const [pingPong, setPingPong] = useState(false);
   const [transparent, setTransparent] = useState(true);
   const [bgColor, setBgColor] = useState("#ffffff");
+  const [scale, setScale] = useState(1);
   const [gif, setGif] = useState<{ url: string; bytes: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +176,31 @@ export default function SpriteBench() {
     },
     [],
   );
+
+  // Load the demo slime on first visit so the page is alive immediately
+  // (never replaces a sheet the user already loaded).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const dataUrl = makeDemoSheet();
+      if (!dataUrl) return;
+      const img = await loadImage(dataUrl);
+      if (cancelled) return;
+      setSource(
+        (prev) =>
+          prev ?? {
+            dataUrl,
+            img,
+            name: DEMO_NAME,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+          },
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ---- Slice whenever the sheet or grid changes ----
   useEffect(() => {
@@ -308,7 +336,7 @@ export default function SpriteBench() {
           ? [...included, ...included.slice(1, -1).reverse()]
           : included;
         const blob = encodeGif(
-          sequence.map((f) => f.imageData),
+          sequence.map((f) => scaleImageData(f.imageData, scale)),
           {
             delayMs: 1000 / fps,
             delaysMs: sequence.map(
@@ -328,7 +356,7 @@ export default function SpriteBench() {
         setBusy(false);
       }
     }, 30);
-  }, [included, fps, pingPong, transparent, bgColor, tweaks]);
+  }, [included, fps, pingPong, transparent, bgColor, tweaks, scale]);
 
   useEffect(
     () => () => {
@@ -543,6 +571,36 @@ export default function SpriteBench() {
                     }}
                     className="w-40 accent-cyan-400"
                   />
+                </label>
+                <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
+                  <span>
+                    Size{" "}
+                    {included[0] && (
+                      <span className="text-xs text-zinc-500">
+                        ({included[0].imageData.width * scale}×
+                        {included[0].imageData.height * scale}px)
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex gap-1">
+                    {[1, 2, 4].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          setScale(s);
+                          setGif(null);
+                        }}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                          scale === s
+                            ? "bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/40"
+                            : "border border-zinc-700 text-zinc-300 hover:border-cyan-500/60 hover:text-cyan-300"
+                        }`}
+                      >
+                        {s}×
+                      </button>
+                    ))}
+                  </div>
                 </label>
                 <label className="flex items-center gap-2 text-sm text-zinc-300">
                   <input

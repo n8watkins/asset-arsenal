@@ -119,6 +119,24 @@ export function sliceSpritesheet(
   return frames;
 }
 
+/** Integer nearest-neighbor upscale (for crisp pixel-art GIF export). */
+export function scaleImageData(src: ImageData, factor: number): ImageData {
+  if (factor <= 1) return src;
+  const a = document.createElement("canvas");
+  a.width = src.width;
+  a.height = src.height;
+  const b = document.createElement("canvas");
+  b.width = src.width * factor;
+  b.height = src.height * factor;
+  const actx = a.getContext("2d");
+  const bctx = b.getContext("2d", { willReadFrequently: true });
+  if (!actx || !bctx) return src;
+  actx.putImageData(src, 0, 0);
+  bctx.imageSmoothingEnabled = false;
+  bctx.drawImage(a, 0, 0, b.width, b.height);
+  return bctx.getImageData(0, 0, b.width, b.height);
+}
+
 export type StabilizeAnchor = "center" | "bottom";
 
 /**
