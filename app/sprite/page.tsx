@@ -131,6 +131,28 @@ export default function SpriteBench() {
     return () => window.removeEventListener("paste", onPaste);
   }, [acceptFile]);
 
+  // Explicit Paste button — Ctrl/Cmd+V needs page focus and is easy to miss,
+  // so offer a clickable clipboard read too.
+  const handlePasteButton = useCallback(async () => {
+    setError(null);
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (type) {
+          const blob = await item.getType(type);
+          await acceptFile(new File([blob], "pasted-image.png", { type }));
+          return;
+        }
+      }
+      setError("No image on the clipboard — copy an image first, then hit Paste.");
+    } catch {
+      setError(
+        "Couldn't read the clipboard (browser blocked it). Pressing Ctrl/Cmd+V anywhere on the page also works.",
+      );
+    }
+  }, [acceptFile]);
+
   const handleGalleryPick = useCallback(
     async (img: { dataUrl: string; fileName: string }) => {
       setError(null);
@@ -405,6 +427,16 @@ export default function SpriteBench() {
                   Drop, click, or paste a sprite sheet
                 </span>
                 <span className="text-xs text-zinc-500">PNG with transparency works best</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handlePasteButton();
+                  }}
+                  className="mt-2 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
+                >
+                  📋 Paste from clipboard
+                </button>
               </div>
               <input
                 ref={fileInputRef}
@@ -725,17 +757,39 @@ export default function SpriteBench() {
                           Close
                         </button>
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-8 gap-y-4 text-sm text-zinc-300">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={!excluded.has(f.index) && !skipped}
-                            disabled={skipped}
-                            onChange={() => toggleFrame(f.index)}
-                            className="accent-cyan-400"
-                          />
-                          In animation
-                        </label>
+                      <div className="flex flex-wrap items-start gap-5">
+                        {/* Big preview of just this frame — updates live as you nudge */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={f.dataUrl}
+                          alt={`Frame ${f.index + 1} preview`}
+                          className={`h-36 w-36 shrink-0 rounded-lg border object-contain ${
+                            excluded.has(f.index) || skipped
+                              ? "border-zinc-800 opacity-40"
+                              : "border-zinc-700"
+                          }`}
+                          style={{
+                            imageRendering: "pixelated",
+                            backgroundImage:
+                              "conic-gradient(#3f3f46 0 25%, #27272a 0 50%, #3f3f46 0 75%, #27272a 0)",
+                            backgroundSize: "16px 16px",
+                          }}
+                        />
+                        <div className="flex min-w-0 flex-1 flex-col gap-4 text-sm text-zinc-300">
+                        <button
+                          type="button"
+                          disabled={skipped}
+                          onClick={() => toggleFrame(f.index)}
+                          className={`self-start rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-40 ${
+                            excluded.has(f.index)
+                              ? "border border-red-500/50 text-red-300 hover:border-red-400 hover:text-red-200"
+                              : "bg-cyan-500 text-zinc-950 hover:bg-cyan-400"
+                          }`}
+                        >
+                          {excluded.has(f.index)
+                            ? "✗ Removed from GIF — click to restore"
+                            : "✓ In animation — click to remove"}
+                        </button>
                         <div className="flex items-center gap-2" title="Nudge the crop. Shift-click = 8px">
                           <span className="text-xs text-zinc-500">Nudge</span>
                           <button type="button" className={btn} onClick={(e) => nudge(-1, 0, e.shiftKey ? 8 : 1)}>←</button>
@@ -790,6 +844,7 @@ export default function SpriteBench() {
                           >
                             later ▶
                           </button>
+                        </div>
                         </div>
                       </div>
                       <p className="mt-3 text-xs text-zinc-500">
