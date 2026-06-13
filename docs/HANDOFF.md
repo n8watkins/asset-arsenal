@@ -1,4 +1,13 @@
-# HANDOFF — asset-arsenal (updated 2026-06-10)
+# HANDOFF — asset-arsenal/backend (updated 2026-06-12)
+
+## Companion project
+`asset-arsenal/web` (at `../web/`) is the full SaaS product — separate git repo,
+local-only (no remote yet). Read `../web/docs/HANDOFF.md` for its state.
+**Sprite Arsenal** (`n8watkins/sprite-bench` on GitHub, live at
+`sprite-bench.vercel.app`) is the free standalone tool extracted from this repo's
+`/app/sprite/page.tsx`. Its handoff is in the sprite-bench repo's `HANDOFF.md`.
+
+---
 
 Zero-context briefing for the next agent. Read this fully, then
 [`FABLE-V2-PLAN.md`](./FABLE-V2-PLAN.md) (the implemented plan) before
