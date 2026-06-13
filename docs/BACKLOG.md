@@ -8,7 +8,39 @@ Status legend: 🟢 next · 🟡 queued · ⚪ deferred (waiting on a decision)
 
 ---
 
-## 🟢 1. Regression / eval harness
+## 🟢 1. SVG Icon Bench (the deterministic lane)
+
+**What:** A second asset lane beside the AI pipeline — Iconify search → fetch a
+real vector → restyle it as CSS (color, stroke, glow, badge, background) → live
+HTML preview → export SVG + PNG + recipe. ~$0 per icon, instant, editable-vector
+output. Full plan: [`SVG-ICON-BENCH.md`](./SVG-ICON-BENCH.md).
+
+**Why:** Most real requests are for icons that *already exist*. Generating those
+with an image model is slower, costlier ($0.016–$0.228/set), and less reliable
+than fetching the real vector and restyling it (~$0). Every request this lane
+absorbs is pure margin, and the output is a true SVG, not a raster. It's the
+right default; the AI lane becomes the premium fall-through for the custom stuff.
+
+**Approach (build order from the plan §8):**
+- `lib/svg/iconify.ts` + `cache.ts` — fetch icon-data for a seed list, cache in
+  IndexedDB (lazy; grow around demand). Local `@iconify-json/*` packages as the
+  offline default; the API for discovery + long tail.
+- `lib/svg/restyle.ts` + `PackPreview` — render fetched icons in HTML, apply one
+  CSS style across the whole set. **This is the proof slice** — does live restyle
+  feel like magic? Needs zero keys, zero routes, zero spend.
+- `RestyleControls` → wire color/stroke/glow/badge/bg to the preview.
+- `/api/svg/search` + `SearchPanel` → real Iconify search → pick into pack.
+- `lib/svg/rasterize.ts` (sharp) + `/api/svg/rasterize` + `ExportPanel` → PNG +
+  zip + `recipe.json` + `licenses.json`.
+- `/api/svg/search-terms` [nano] → optional intent step.
+- `/bench-router` → try-SVG-first, fall-through-to-AI.
+
+**Effort:** M. **Depends on:** nothing for steps 1–3 (browser-only). Shares
+ROADMAP #1 (R2+Turso) for the server cache and #4 (zip-on-download) later.
+
+---
+
+## 🟢 2. Regression / eval harness
 
 **What:** A golden set of source images with expected/known-good outputs, run
 through V1/V2/V3 on demand, scored, and tracked over time.

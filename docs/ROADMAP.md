@@ -5,23 +5,31 @@ three different ways. This doc is the scaffolding for turning that into a
 product — the pipeline shapes we're comparing, the cost model, the storage
 decision, the backend to-do, and where the product should go next.
 
+> **Two lanes.** Everything in §1 is the **AI lane** — it *generates* pixels for
+> the icon that doesn't exist. Beside it now sits the **SVG lane** — it *fetches*
+> a real vector and restyles it (CSS recolor/stroke/glow/badge) for the icon that
+> *does* exist, at ~$0 per icon. The product routes between them: try the cheap
+> deterministic lane first, fall through to AI for the custom stuff. Full plan in
+> [`SVG-ICON-BENCH.md`](./SVG-ICON-BENCH.md).
+
 > The live version of §1–§4 is the in-app **/roadmap** page (numbers there are
 > computed from the real pricing table). This doc is the durable, shareable copy
 > and adds the **product direction** (§5), which the page doesn't cover.
 
 ---
 
-## 1. Pipeline shapes
+## 1. Pipeline shapes (AI lane)
 
-Three ways to run the same job, sharing prompts and models. The open question
-across all three: **does the collection image earn its cost?** Costs are model
-spend for a 16-icon set on the cheapest stack.
+Three ways to run the same **generate** job, sharing prompts and models. The open
+question across all three: **does the collection image earn its cost?** Costs are
+model spend for a 16-icon set on the cheapest stack.
 
 | | Route | How it works | Theory | Trade-off | ~Cost / 16 |
 |---|---|---|---|---|---|
 | **V1** | `/bench` | analyze → collection prompt → collection image → per-icon prompts → generate ×N | A normalized collection image (icons isolated, dashboard noise stripped) is a better style anchor than the raw source | Most steps/calls, highest cost; two extra calls before any icon exists | **$0.228** |
 | **V2** | `/bench-v2` | ONE vision pass = manifest + shared style + a prompt per icon, then generate each icon against the **source image**; fan-out 3 at a time | The model already sees the pixels in the analyze pass, so it can write every per-icon prompt then — more grounded than re-reading a regenerated image. The collection image may not earn its cost | The source is a busy reference; layout noise can leak in (mitigated by a wrapper that takes only style, ignores layout) | **$0.181** |
 | **V3** | `/bench-v3` | Same analyze front, then ALL icons in ONE 4×4 grid image, sliced locally | Per-icon image calls dominate cost; one grid + free local slicing is far cheaper | 16 icons share one 1024² canvas → lower per-icon resolution; slicing edge-cases reconciled against the known icon count | **$0.016** |
+| **SVG** | `/svg-bench` | **(different job — fetch, not generate)** Iconify search → fetch real vector → restyle as CSS (color/stroke/glow/badge) → rasterize on export | The icon that already exists shouldn't be generated — fetch the real vector and restyle it. Editable SVG out, not raster | Only covers icons that exist in a library; multicolor sets recolor partially | **~$0** |
 
 **V3 collapses V2's 16 image calls into 1** — 16× cheaper on the image line,
 ~11× cheaper on the full run once the fixed analyze pass is counted. That gap is
@@ -115,6 +123,30 @@ Clerk / Lucia). Metadata-in-Turso + zip-on-download are stable regardless.
 ---
 
 ## 5. Product direction
+
+### Two lanes: fetch the icon that exists, generate the one that doesn't
+
+The sharpest reframe since we started. Most real requests are for icons that
+**already exist** in a library — generating those with an image model is slower,
+costlier, and less reliable than fetching the real vector and restyling it. So
+the product is two lanes, not one:
+
+- **SVG lane (deterministic).** Iconify search → fetch real vector → restyle as
+  CSS (recolor, stroke, glow, badge, background) → editable SVG + PNG out.
+  ~$0/icon, instant, and the output is a *true vector* the user can keep editing.
+  This is the right default for the bulk of requests. Plan:
+  [`SVG-ICON-BENCH.md`](./SVG-ICON-BENCH.md).
+- **AI lane (generative).** Everything in §1. The right tool for the icon, emote,
+  or hero asset that *doesn't exist* and can't be fetched. Premium, PNG-first.
+
+**Route, don't make the user classify.** Try the SVG lane first; if there's no
+good match, or the user clicks "make a custom one," fall through to AI
+(`/bench-router`). The cost gap is the whole margin story: ~$0 vs $0.016–$0.228
+per set. Every request the SVG lane absorbs is pure margin.
+
+This also reframes the "SVG vectorization" export-depth item below: we don't need
+to vectorize raster output when the icon came from a vector in the first place —
+vectorization is now only for the AI lane's custom output.
 
 ### Master assets first — and mean it
 

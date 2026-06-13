@@ -17,9 +17,18 @@ See `web/docs/HANDOFF.md` for the web project's deploy instructions and state.
 
 ## Tools playground (root)
 
-An OpenAI-powered **icon extraction workbench**. Upload a source image → a
-6-step AI pipeline detects the icons, builds a style-anchoring collection image,
-then regenerates each icon as a clean, transparent standalone asset.
+An icon workbench with **two lanes**:
+
+- **AI lane** — upload a source image → a 6-step AI pipeline detects the icons,
+  builds a style-anchoring collection image, then regenerates each icon as a
+  clean, transparent standalone asset. The icon that *doesn't exist*. (Detailed
+  below.)
+- **SVG lane** — search Iconify → fetch a real vector → restyle it as CSS
+  (color, stroke, glow, badge) → export editable SVG + PNG. ~$0/icon, instant.
+  The icon that *does exist*. Plan: [`docs/SVG-ICON-BENCH.md`](docs/SVG-ICON-BENCH.md).
+
+The product routes between them — try the cheap deterministic lane first, fall
+through to AI for the custom stuff. The AI lane's 6-step chain:
 
 ```
 sourceImage
@@ -59,7 +68,9 @@ clear "API key is not configured." message).
 
 | Route | What |
 |---|---|
-| `/bench` | Primary surface — 6 sections, one per pipeline step. Each shows the resolved prompt before running and feeds its output into the next step. |
+| `/bench` | AI lane — 6 sections, one per pipeline step. Each shows the resolved prompt before running and feeds its output into the next step. |
+| `/svg-bench` | **SVG lane** (planned) — Iconify search → fetch real vector → live CSS restyle → export SVG + PNG + recipe. ~$0/icon. See [`docs/SVG-ICON-BENCH.md`](docs/SVG-ICON-BENCH.md). |
+| `/bench-router` | Routes a request to the cheap SVG lane first, falls through to the AI lane for custom assets. |
 | `/` | Linear run-through of the full flow. |
 | `/gallery` | IndexedDB-backed library of source images and generated icons. |
 
