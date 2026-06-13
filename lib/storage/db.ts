@@ -15,6 +15,8 @@ import type {
 import type { UsageEntry } from "@/lib/icon/usage-log";
 // Same pattern for the Gemini analysis chat sidebar.
 import type { GeminiChat } from "@/lib/gemini/chat-store";
+// SVG lane — cached raw vector records (the lazy fetch cache).
+import type { CachedSvgIcon } from "@/lib/svg/cache";
 
 // ---- Stored record types ----
 
@@ -100,6 +102,11 @@ interface AssetArsenalDB extends DBSchema {
     value: GeminiChat;
     indexes: { "by-updatedAt": string };
   };
+  svgIcons: {
+    key: string;
+    value: CachedSvgIcon;
+    indexes: { "by-cachedAt": number };
+  };
 }
 
 // ---- Singleton ----
@@ -114,7 +121,7 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
   }
 
   if (!_dbPromise) {
-    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 4, {
+    _dbPromise = openDB<AssetArsenalDB>("asset-arsenal", 5, {
       // Guarded creates → idempotent across versions; bumping the version runs
       // this again and only adds what's missing (existing data is untouched).
       upgrade(db) {
@@ -146,6 +153,12 @@ export function getDB(): Promise<IDBPDatabase<AssetArsenalDB>> {
         if (!db.objectStoreNames.contains("chats")) {
           const chatStore = db.createObjectStore("chats", { keyPath: "id" });
           chatStore.createIndex("by-updatedAt", "updatedAt");
+        }
+
+        // svgIcons store (v5) — SVG lane lazy cache of raw vector data.
+        if (!db.objectStoreNames.contains("svgIcons")) {
+          const svgStore = db.createObjectStore("svgIcons", { keyPath: "id" });
+          svgStore.createIndex("by-cachedAt", "cachedAt");
         }
       },
     });
