@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+/*
+ * Asset Arsenal — dark premium, developer-dashboard aesthetic.
+ * Design tokens consumed across the marketing surface and app.
+ *
+ * NOTE: the @theme token NAMES below are load-bearing and consumed across the
+ * codebase (bg-surface, text-muted, text-accent, etc.). Values may be retuned,
+ * names must keep resolving.
+ */
+:root {
+  --background: #07080d;
+  --surface: #0e1018;
+  --surface-2: #151826;
+  --foreground: #f4f6fb;
+  --muted: #98a1b5;
+  --border: #232739;
+
+  --primary: #6d5efc;
+  --primary-foreground: #ffffff;
+  --accent: #2dd4bf;
+  --ring: #6d5efc;
+
+  /* Extra accents for gradients/glows (additive, safe to consume). */
+  --primary-bright: #8f83ff;
+  --accent-bright: #5eead4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-ring: var(--ring);
+  --color-primary-bright: var(--primary-bright);
+  --color-accent-bright: var(--accent-bright);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  /* Belt-and-suspenders guard against horizontal scroll on small screens. */
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ----------------------------------------------------------------------------
+ * Ambient hero gradient glow.
+ * Richer, layered radial glow blending indigo + teal behind hero content.
+ * -------------------------------------------------------------------------- */
+.glow {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow::before {
+  content: "";
+  position: absolute;
+  inset: -25% 0 auto 0;
+  z-index: -1;
+  height: 640px;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      46% 58% at 50% -2%,
+      color-mix(in oklab, var(--primary) 42%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      36% 46% at 82% 8%,
+      color-mix(in oklab, var(--accent) 30%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      34% 44% at 16% 12%,
+      color-mix(in oklab, var(--primary-bright) 26%, transparent),
+      transparent 70%
+    );
+  filter: blur(14px);
+  opacity: 0.9;
+}
+
+/* ----------------------------------------------------------------------------
+ * Additive utilities (new — safe to consume, nothing renamed/removed).
+ * -------------------------------------------------------------------------- */
+
+/* Subtle dotted/grid texture overlay for hero and dark panels. */
+.grid-texture {
+  position: relative;
+}
+
+.grid-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--border) 60%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--border) 60%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(
+    70% 60% at 50% 0%,
+    #000 0%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(70% 60% at 50% 0%, #000 0%, transparent 78%);
+  opacity: 0.5;
+}
+
+/* Gradient text treatment for hero headlines (indigo → white → teal). */
+.text-gradient {
+  background-image: linear-gradient(
+    100deg,
+    var(--primary-bright) 0%,
+    var(--foreground) 46%,
+    var(--accent-bright) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Primary button gradient surface + glow. */
+.btn-primary-gradient {
+  background-image: linear-gradient(
+    180deg,
+    var(--primary-bright),
+    var(--primary)
+  );
+  box-shadow:
+    0 1px 0 0 color-mix(in oklab, #fff 18%, transparent) inset,
+    0 8px 24px -8px color-mix(in oklab, var(--primary) 70%, transparent);
+}
+
+.btn-primary-gradient:hover {
+  box-shadow:
+    0 1px 0 0 color-mix(in oklab, #fff 24%, transparent) inset,
+    0 12px 32px -8px color-mix(in oklab, var(--primary) 85%, transparent);
+}
+
+/* Gradient ring/border for featured surfaces (e.g. pricing). */
+.featured-ring {
+  position: relative;
+}
+
+.featured-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in oklab, var(--primary) 85%, transparent),
+    color-mix(in oklab, var(--accent) 65%, transparent) 55%,
+    color-mix(in oklab, var(--border) 90%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Soft inner glow for featured cards / hero panels. */
+.inner-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 22%, transparent),
+    0 24px 60px -28px color-mix(in oklab, var(--primary) 60%, transparent),
+    0 0 80px -40px color-mix(in oklab, var(--accent) 50%, transparent) inset;
+}
+
+/* Hairline gradient divider between sections. */
+.section-divider {
+  border-top: 1px solid transparent;
+  border-image: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in oklab, var(--border) 100%, transparent) 18%,
+      color-mix(in oklab, var(--primary) 35%, transparent) 50%,
+      color-mix(in oklab, var(--border) 100%, transparent) 82%,
+      transparent
+    )
+    1;
+}
