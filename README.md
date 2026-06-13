@@ -1,5 +1,22 @@
 # Asset Arsenal
 
+## Monorepo structure
+
+| Directory | What | Status |
+|---|---|---|
+| *(root)* | **Tools playground** — icon pipeline benches, Fable AI bench, sprite tool, experiments | Live (local dev only) |
+| `web/` | **SaaS product** — credit-based web app, Google OAuth, Stripe billing, Cloudflare R2 | Not yet deployed |
+
+Both share the same GitHub repo (`n8watkins/asset-arsenal`, private).
+`web/` was merged in via `git subtree add` — its full commit history is preserved.
+See `web/docs/HANDOFF.md` for the web project's deploy instructions and state.
+
+**Sprite Arsenal** (free standalone tool, `n8watkins/sprite-bench`) was extracted from the root's `/app/sprite/` and lives at https://sprite-bench.vercel.app.
+
+---
+
+## Tools playground (root)
+
 An OpenAI-powered **icon extraction workbench**. Upload a source image → a
 6-step AI pipeline detects the icons, builds a style-anchoring collection image,
 then regenerates each icon as a clean, transparent standalone asset.
