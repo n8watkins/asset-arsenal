@@ -68,24 +68,45 @@ Two ideas carry the whole design:
 
 ## 3. Fetching & caching (Iconify)
 
-### Two ways to get icon data
+### Local-first, API for discovery — it's tiered, not either/or
 
-- **Local packages (recommended default).** Install `@iconify-json/*` sets +
-  `@iconify/utils`. The raw icon body + viewBox ship as JSON in the package; no
-  network call, no rate limit, license metadata bundled. Fully offline and
-  deterministic. Start with a handful of monochrome sets: `lucide`, `tabler`,
-  `ph` (Phosphor), `mdi`, `bi` (Bootstrap).
-- **Iconify API (discovery + long tail).** For search and for sets we haven't
-  bundled, hit the public API:
-  - Search: `GET https://api.iconify.design/search?query={q}&limit={n}`
-    → `{ icons: ["lucide:crosshair", ...], ... }`
-  - Icon data (the right call — gives raw body to restyle locally):
-    `GET https://api.iconify.design/{prefix}.json?icons={a},{b}`
-    → `{ prefix, icons: { name: { body, width, height } }, width, height }`
-  - License: `GET https://api.iconify.design/collections` (per-set license/attribution)
+We do **not** bundle all of Iconify (200k+ icons across 150+ sets — far too
+heavy). Iconify publishes **each set as its own npm package** — a single JSON
+file holding every icon in that set as raw path data + viewBox + license. We
+install the **handful of popular sets** that cover the common ~80%: `lucide`,
+`tabler`, `ph` (Phosphor), `mdi`, `bi` (Bootstrap). `@iconify/utils` turns that
+JSON into an `<svg>` string (`iconToSVG`, `getIconData`, `replaceIDs`).
 
-> Prefer fetching **icon data** (`.json`, raw `body`) over the rendered
-> `.svg` endpoint. We want the raw paths so *we* control color/stroke/size, not
+The split — which layer serves which operation:
+
+| Operation | Bundled set | Not bundled (long tail) |
+|---|---|---|
+| **Fetch a vector** | local JSON — **zero network** | Iconify API |
+| **Search / discover** | match against the set's own name+alias list, locally | Iconify API |
+
+- **Fetching a bundled icon is 100% local** — no network, no rate limit, license
+  bundled. That's the "default is local" claim, and it's the common path.
+- **Search/discovery is where the API earns its place.** "Find every crosshair-ish
+  icon across *all* of Iconify" is a cross-set query over an index that lives on
+  Iconify's servers. We can search *within bundled sets* locally (iterate their
+  names/aliases), but discovering icons in sets we didn't bundle needs the API.
+
+So: **bundled sets serve fully offline; the API is the discovery layer + long
+tail, not the serving layer.** And whatever the API fetches drops into the lazy
+cache (below), so the network footprint only shrinks over time.
+
+Iconify API endpoints (discovery + long tail only):
+
+```
+Search:    GET https://api.iconify.design/search?query={q}&limit={n}
+           → { icons: ["lucide:crosshair", ...], ... }
+Icon data: GET https://api.iconify.design/{prefix}.json?icons={a},{b}
+           → { prefix, icons: { name: { body, width, height } }, ... }
+License:   GET https://api.iconify.design/collections   (per-set license/attribution)
+```
+
+> Always fetch **icon data** (`.json`, raw `body`) over the rendered `.svg`
+> endpoint. We want the raw paths so *we* control color/stroke/gradient/size, not
 > the server.
 
 ### Lazy cache — grow around demand
@@ -130,13 +151,43 @@ No model calls. Each control maps to a plain transform on the SVG markup:
 
 | Control | Implementation |
 |---|---|
-| **Color** | set CSS `color` (icons use `currentColor`) or swap `fill`/`stroke` |
+| **Color** | flat: set CSS `color` (icons use `currentColor`) or swap `fill`/`stroke` |
+| **Gradient** | inject a `<defs>` gradient, point the icon's paint at `url(#id)` (see below) |
 | **Secondary color** | target a second path / `currentColor` layer where present |
 | **Stroke width** | override `stroke-width` (outline sets) |
 | **Glow** | `filter: drop-shadow(0 0 {blur}px {color})`, stackable for intensity |
 | **Badge** | wrap in a `<div>`/`<rect>` shape (circle / rounded / hex) with bg + padding |
 | **Background** | transparent (default) / solid / gradient on the wrapper |
 | **Size** | scale the `viewBox` / set width+height at rasterize time |
+
+#### Gradients (still deterministic — no AI)
+
+Color is a `solid | gradient` union, not just a hex. A gradient is native SVG:
+inject a `<defs>` with a `<linearGradient>`/`<radialGradient>` and point the
+icon's paint at it instead of `currentColor`:
+
+```svg
+<defs>
+  <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%"   stop-color="#67e8f9"/>
+    <stop offset="100%" stop-color="#a78bfa"/>
+  </linearGradient>
+</defs>
+<path d="..." stroke="url(#g1)"/>   <!-- or fill="url(#g1)" -->
+```
+
+Two gotchas, both already solved:
+
+- **Stroke vs fill.** Outline sets (Lucide, Tabler) paint with `stroke`; filled
+  sets with `fill`. The gradient attaches to whichever the icon uses —
+  `colorMode`/draw-mode detection (§3) tells us which. (Gradient-on-*stroke* of an
+  outline icon looks great for the space/HUD vibe.)
+- **ID collisions.** A pack rendered in one HTML page with every icon using
+  `id="g1"` clashes and renders wrong. `@iconify/utils`' **`replaceIDs`** rewrites
+  each icon's internal IDs to be unique — built for exactly this.
+
+Rasterizing is free: `sharp` renders SVG gradients natively, so gradient → PNG
+just works at export with no extra code.
 
 The recipe — the tiny, portable, regenerable description of a pack:
 
@@ -150,7 +201,10 @@ The recipe — the tiny, portable, regenerable description of a pack:
     { provider: "iconify", prefix: "ph",     name: "rocket",    colorMode: "monochrome" },
   ],
   style: {
-    color: "#67e8f9",
+    // color is a union: flat OR gradient
+    color: { type: "solid", value: "#67e8f9" },
+    // …or: { type: "gradient", kind: "linear", angle: 45,
+    //        stops: [{ offset: 0, color: "#67e8f9" }, { offset: 1, color: "#a78bfa" }] }
     secondaryColor: null,
     strokeWidth: 2,
     glow: { color: "#67e8f9", blur: 8 },
