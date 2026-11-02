@@ -493,7 +493,6 @@ function EmberMockup({ family }: { family: FamilyId }) {
 
 function VaultMockup({ family }: { family: FamilyId }) {
   const { palette: p, appUrl } = getFamily(family);
-  const grad = `linear-gradient(135deg, ${p.accent}, ${p.accent2})`;
   // candlestick data: [low%, high%, openTop%, openBottom%, up]
   const candles = [
     { l: 20, h: 70, b: 34, t: 56, up: true },
