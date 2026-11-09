@@ -130,4 +130,4 @@ sprite tool, experiments). It is a **separate git repo** pushed to
 vision but are independent codebases — no shared imports.
 
 The sprite tooling in the backend will eventually surface in the web product
-(and in Sprite Arsenal, the free standalone tool at sprite-bench.vercel.app).
+(and in Sprite Arsenal, the free standalone tool at sprite-bench.n8builds.dev).

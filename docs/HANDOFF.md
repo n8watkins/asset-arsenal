@@ -4,7 +4,7 @@
 `asset-arsenal/web` (at `../web/`) is the full SaaS product — separate git repo,
 local-only (no remote yet). Read `../web/docs/HANDOFF.md` for its state.
 **Sprite Arsenal** (`n8watkins/sprite-bench` on GitHub, live at
-`sprite-bench.vercel.app`) is the free standalone tool extracted from this repo's
+`sprite-bench.n8builds.dev`) is the free standalone tool extracted from this repo's
 `/app/sprite/page.tsx`. Its handoff is in the sprite-bench repo's `HANDOFF.md`.
 
 ---

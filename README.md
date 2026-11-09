@@ -1,17 +1,20 @@
 # Asset Arsenal
 
+AI tools for turning images into clean, consistent icon and asset packs: an icon-extraction workbench, the Fable chat-first bench, a sprite tool and experiments, plus the start of a SaaS product around them.
+A project by Nathan Watkins; the page-skins concept page is at https://assetarsenal.n8builds.dev.
+
 ## Monorepo structure
 
 | Directory | What | Status |
 |---|---|---|
-| *(root)* | **Tools playground** — icon pipeline benches, Fable AI bench, sprite tool, experiments | Live (local dev only) |
-| `web/` | **SaaS product** — credit-based web app, Google OAuth, Stripe billing, Cloudflare R2 | Not yet deployed |
+| *(root)* | **Tools playground**: icon pipeline benches, Fable AI bench, sprite tool, experiments | Local dev only |
+| `web/` | **SaaS product**: credit-based web app, Google OAuth, Stripe billing, Cloudflare R2 | Not yet deployed |
+| `landing/` | **Concept page** for page skins | Live at https://assetarsenal.n8builds.dev |
 
-Both share the same GitHub repo (`n8watkins/asset-arsenal`, private).
-`web/` was merged in via `git subtree add` — its full commit history is preserved.
+`web/` was merged in with `git subtree add`, so its full commit history is preserved.
 See `web/docs/HANDOFF.md` for the web project's deploy instructions and state.
 
-**Sprite Arsenal** (free standalone tool, `n8watkins/sprite-bench`) was extracted from the root's `/app/sprite/` and lives at https://sprite-bench.vercel.app.
+**Sprite Arsenal** (free standalone tool, [`n8watkins/sprite-bench`](https://github.com/n8watkins/sprite-bench)) was extracted from the root's `/app/sprite/` and lives at https://sprite-bench.n8builds.dev.
 
 ---
 
@@ -35,7 +38,7 @@ individualPrompts { sharedStylePrompt, iconPrompts[] }
 generatedIcons[]
 ```
 
-The collection image is the visual style anchor for the whole run — steps 4 and 5
+The collection image is the visual style anchor for the whole run: steps 4 and 5
 pass it back to the model as a reference image via `images.edit` (not
 `images.generate`, which has no reference-image input).
 
@@ -46,12 +49,12 @@ rerunnable breakpoint with "Show JSON" visibility at every stage.
 
 ```bash
 npm install
-# Add a real key — OpenAI calls will not work until you do:
+# Add a real key; OpenAI calls will not work until you do:
 echo 'OPENAI_API_KEY=sk-...' > .env.local
 npm run dev
 ```
 
-The key is **server-side only** — it's never exposed to the browser. The UI and
+The key is **server-side only**: it's never exposed to the browser. The UI and
 routes build and render fine without a key; only the OpenAI calls fail (with a
 clear "API key is not configured." message).
 
@@ -59,7 +62,7 @@ clear "API key is not configured." message).
 
 | Route | What |
 |---|---|
-| `/bench` | Primary surface — 6 sections, one per pipeline step. Each shows the resolved prompt before running and feeds its output into the next step. |
+| `/bench` | Primary surface: 6 sections, one per pipeline step. Each shows the resolved prompt before running and feeds its output into the next step. |
 | `/` | Linear run-through of the full flow. |
 | `/gallery` | IndexedDB-backed library of source images and generated icons. |
 
@@ -74,7 +77,7 @@ Next.js 16 (App Router) · TypeScript · Tailwind v4 · `openai@6` · `zod@4`.
 | `docs/API-CONTRACT.md` | Authoritative spec for the 6-step chain, model roles, and call shapes |
 | `types/icon-pipeline.ts` | Domain + API types |
 | `lib/icon/models.ts` | Model role IDs + cost guardrails (change model IDs here only) |
-| `lib/icon/prompts.ts` | All per-step prompts — edit here to tune the pipeline |
+| `lib/icon/prompts.ts` | All per-step prompts; edit here to tune the pipeline |
 | `lib/icon/schemas/` | Zod schemas for structured outputs and request validation |
 | `app/api/icons/` | `analyze`, `compose-collection-prompt`, `generate-collection-image`, `compose-individual-prompts`, `generate-one`, `generate-batch` |
 
@@ -96,3 +99,7 @@ imageGeneratorModel:   "gpt-image-1-mini" // step 5: collection image + prompt -
 Max 25 icons/run (hard cap 40), 1 image per icon, transparent PNG output, upload
 limited to png/jpeg/webp ≤10MB, partial-failure tolerant generation (one failed
 icon doesn't kill the batch; each icon can be regenerated individually).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
